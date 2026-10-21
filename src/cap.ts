@@ -61,6 +61,8 @@ export async function streamWithBudget(
         notes += event.delta;
         if (++tokens >= budget && !answered) {
           retry = 'budget';
+          // A copy: the adapter shares this message across events and marks it aborted when we abort.
+          kept = structuredClone(event.partial);
           break;
         }
       }

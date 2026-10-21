@@ -131,3 +131,23 @@ test('unmatchedRules names rules that match no model', () => {
   ];
   assert.deepEqual(unmatchedRules(rules, models), ['no model "ollama/gemma4:26b"', 'provider "lmstudio" has no models']);
 });
+
+test('the cut thinking is not shown as aborted', async () => {
+  // Like pi-ai's adapters: every event shares one message, and an abort marks it aborted.
+  const shared = async function* (signal: AbortSignal): AsyncGenerator<AssistantMessageEvent> {
+    const output = message([{ type: 'thinking', thinking: '' }]);
+    signal.addEventListener('abort', () => {
+      output.stopReason = 'aborted';
+    });
+    yield { type: 'start', partial: output };
+    yield { type: 'thinking_start', contentIndex: 0, partial: output };
+    for (let i = 0; i < 50 && !signal.aborted; i++) {
+      (output.content[0] as { thinking: string }).thinking += 't';
+      yield { type: 'thinking_delta', contentIndex: 0, delta: 't', partial: output };
+    }
+  };
+  const { events, final } = await run([shared, reply(0, 'answer')], 5);
+  const end = events.find((e) => e.type === 'thinking_end');
+  assert.equal(end?.type === 'thinking_end' && end.partial.stopReason, 'stop');
+  assert.equal(final?.type === 'done' && final.message.stopReason, 'stop');
+});
