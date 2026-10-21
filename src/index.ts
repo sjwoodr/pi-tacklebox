@@ -46,8 +46,9 @@ export default function (pi: ExtensionAPI) {
       cut.reason === 'budget'
         ? `Thinking capped at ${budget} tokens; asked for the answer`
         : `Reasoning ended without an answer after ${cut.tokens} tokens; asked for one`;
+    const asked = cut.asked > 1 ? ' (asked twice: the first follow-up was empty)' : '';
     cuts++;
-    say(message, 'info');
+    say(message + asked, 'info');
     ui?.setStatus('think-budget', `think cap: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}`);
   };
 
@@ -59,12 +60,12 @@ export default function (pi: ExtensionAPI) {
     if (!budget) return api.streamSimple(model, context, options);
 
     const out = createAssistantMessageEventStream();
-    const attempt = (notes: string | undefined, signal: AbortSignal) =>
+    const attempt = (notes: string | undefined, signal: AbortSignal, again?: boolean) =>
       notes === undefined
         ? api.streamSimple(model, context, { ...options, signal })
         : api.streamSimple(
             model,
-            { ...context, messages: [...context.messages, { role: 'user', content: answerNow(notes), timestamp: Date.now() }] },
+            { ...context, messages: [...context.messages, { role: 'user', content: answerNow(notes, again), timestamp: Date.now() }] },
             // No level is how pi asks for thinking off (the model's thinkingLevelMap.off is sent).
             { ...options, reasoning: undefined, signal },
           );

@@ -12,6 +12,8 @@ This extension enforces the cap on pi's side, the way budget forcing works:
 2. At the cap it aborts the request and sends one more, with thinking off. That request
    carries the reasoning so far as notes and asks the model to answer or make its tool call now.
 3. When the reasoning ends with nothing said, it sends the same follow-up.
+4. When a follow-up comes back with nothing either (no text, no tool call), it asks once more,
+   so the agent does not stop with an empty reply. It never asks a third time.
 
 pi sees one assistant message: the thinking, then the follow-up's answer or tool call.
 

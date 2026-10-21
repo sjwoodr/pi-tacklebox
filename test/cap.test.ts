@@ -75,7 +75,7 @@ test('at the budget it aborts, then answers with thinking off and the notes', as
   let aborted = false;
   const { events, notes, final, cut } = await run([reply(50, 'never', () => (aborted = true)), reply(0, 'answer')], 5);
   assert.ok(aborted, 'the first request is aborted');
-  assert.deepEqual(cut, { reason: 'budget', tokens: 5 });
+  assert.deepEqual(cut, { reason: 'budget', tokens: 5, asked: 1 });
   assert.deepEqual(notes, [undefined, 'ttttt']);
   assert.equal(events.filter((e) => e.type === 'thinking_delta').length, 5);
   assert.equal(events.filter((e) => e.type === 'start').length, 1, 'one message, one start');
@@ -96,7 +96,7 @@ test('at the budget it aborts, then answers with thinking off and the notes', as
 test('reasoning that ends with nothing said gets the same follow-up', async () => {
   const { notes, final, cut } = await run([reply(3, ''), reply(0, 'answer')], 10);
   assert.deepEqual(notes, [undefined, 'ttt']);
-  assert.deepEqual(cut, { reason: 'empty', tokens: 3 });
+  assert.deepEqual(cut, { reason: 'empty', tokens: 3, asked: 1 });
   assert.deepEqual(final?.type === 'done' && final.message.content.map((c) => c.type), ['thinking', 'text']);
 });
 
@@ -150,4 +150,21 @@ test('the cut thinking is not shown as aborted', async () => {
   const end = events.find((e) => e.type === 'thinking_end');
   assert.equal(end?.type === 'thinking_end' && end.partial.stopReason, 'stop');
   assert.equal(final?.type === 'done' && final.message.stopReason, 'stop');
+});
+
+test('an empty follow-up is asked once more, after its own blocks', async () => {
+  const { events, notes, final, cut } = await run([reply(50, 'never'), reply(3, ''), reply(0, 'answer')], 5);
+  assert.deepEqual(notes, [undefined, 'ttttt', 'ttttt']);
+  assert.equal(cut?.asked, 2);
+  const text = events.find((e) => e.type === 'text_start');
+  assert.equal(text?.type === 'text_start' && text.contentIndex, 2, 'after the cut thinking and the empty reply');
+  assert.deepEqual(final?.type === 'done' && final.message.content.map((c) => c.type), ['thinking', 'thinking', 'text']);
+  assert.equal(final?.type === 'done' && final.message.usage.output, 5 + 5 + 5, 'every request counted');
+});
+
+test('two empty follow-ups end the reply instead of asking forever', async () => {
+  const { notes, final, cut } = await run([reply(50, 'never'), reply(0, ''), reply(0, ''), reply(0, 'unused')], 5);
+  assert.equal(notes.length, 3);
+  assert.equal(cut?.asked, 2);
+  assert.equal(final?.type, 'done');
 });

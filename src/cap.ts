@@ -6,21 +6,31 @@ export interface Sink {
   end(): void;
 }
 
-/** One request to the model. `notes` is set on the follow-up after a cut, with thinking off. */
-export type Attempt = (notes: string | undefined, signal: AbortSignal) => AsyncIterable<AssistantMessageEvent>;
+/**
+ * One request to the model. `notes` is set on a follow-up after a cut, with thinking off; `again`
+ * marks the second follow-up, after the first came back with nothing.
+ */
+export type Attempt = (
+  notes: string | undefined,
+  signal: AbortSignal,
+  again?: boolean,
+) => AsyncIterable<AssistantMessageEvent>;
 
-export const answerNow = (notes: string) =>
+export const answerNow = (notes: string, again = false) =>
   `(Your private reasoning so far, not shown to me:)\n${notes}\n\n` +
+  (again ? 'Your last reply was empty. ' : '') +
   'Thinking time is up. Continue now: answer, or make the tool call you need.';
+
+/** Why a reply got the follow-up: the budget ran out, or the reasoning ended with nothing said. */
+export type Cut = { reason: 'budget' | 'empty'; tokens: number; asked: number };
 
 /**
  * Streams one reply that thinks for at most `budget` tokens. At the cap the request is aborted and
  * the model is asked to answer straight away with thinking off, its reasoning so far passed back as
  * notes. The same follow-up runs when the reasoning ends with nothing said, which otherwise leaves
- * an empty reply. pi sees one assistant message: the thinking, then the follow-up's content.
+ * an empty reply, and once more if the follow-up itself says nothing. pi sees one assistant
+ * message: the thinking, then the follow-ups' content.
  */
-/** Why a reply got the follow-up: the budget ran out, or the reasoning ended with nothing said. */
-export type Cut = { reason: 'budget' | 'empty'; tokens: number };
 
 export async function streamWithBudget(
   attempt: Attempt,
@@ -81,21 +91,38 @@ export async function streamWithBudget(
       partial: kept,
     });
   }
-  // The follow-up's blocks come after everything the first request produced.
-  const before = kept.content;
+  // Each follow-up's blocks come after everything already sent; an empty one stays in the message
+  // (pi has seen its events) and the next follows it.
+  let before = kept.content;
+  let extra = tokens;
   const merge = (message: AssistantMessage): AssistantMessage => ({
     ...message,
     content: [...before, ...message.content],
-    usage: withThinking(message.usage, tokens),
+    usage: withThinking(message.usage, extra),
   });
-  for await (const event of attempt(notes, signal ?? new AbortController().signal)) {
-    if (event.type === 'start') continue;
-    if (event.type === 'done') out.push({ ...event, message: merge(event.message) });
-    else if (event.type === 'error') out.push({ ...event, error: merge(event.error) });
-    else out.push({ ...event, contentIndex: event.contentIndex + before.length, partial: merge(event.partial) });
+  for (let asked = 1; ; asked++) {
+    const last = asked === 2;
+    for await (const event of attempt(notes, signal ?? new AbortController().signal, asked > 1)) {
+      if (event.type === 'start') continue;
+      if (event.type === 'done') {
+        if (last || said(event.message)) {
+          out.push({ ...event, message: merge(event.message) });
+          return { reason: retry, tokens, asked };
+        }
+        before = [...before, ...event.message.content];
+        extra += event.message.usage.output;
+      } else if (event.type === 'error') {
+        out.push({ ...event, error: merge(event.error) });
+        return { reason: retry, tokens, asked };
+      } else out.push({ ...event, contentIndex: event.contentIndex + before.length, partial: merge(event.partial) });
+    }
+    if (last) return { reason: retry, tokens, asked }; // a stream that ended without done or error
   }
-  return { reason: retry, tokens };
 }
+
+/** Whether a reply gives pi something to act on: text, or a tool call. */
+const said = (message: AssistantMessage) =>
+  message.content.some((c) => c.type === 'toolCall' || (c.type === 'text' && c.text.trim()));
 
 // The aborted request never reports usage, so its thinking is counted from the stream and its
 // input tokens are left out.
