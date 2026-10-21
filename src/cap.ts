@@ -19,7 +19,15 @@ export const answerNow = (notes: string) =>
  * notes. The same follow-up runs when the reasoning ends with nothing said, which otherwise leaves
  * an empty reply. pi sees one assistant message: the thinking, then the follow-up's content.
  */
-export async function streamWithBudget(attempt: Attempt, budget: number, signal: AbortSignal | undefined, out: Sink) {
+/** Why a reply got the follow-up: the budget ran out, or the reasoning ended with nothing said. */
+export type Cut = { reason: 'budget' | 'empty'; tokens: number };
+
+export async function streamWithBudget(
+  attempt: Attempt,
+  budget: number,
+  signal: AbortSignal | undefined,
+  out: Sink,
+): Promise<Cut | undefined> {
   const first = new AbortController();
   const relay = () => first.abort();
   signal?.addEventListener('abort', relay, { once: true });
@@ -28,16 +36,22 @@ export async function streamWithBudget(attempt: Attempt, budget: number, signal:
   let answered = false;
   let openThinking: number | undefined;
   let kept: AssistantMessage | undefined;
-  let retry = false;
+  let retry: Cut['reason'] | undefined;
   try {
     for await (const event of attempt(undefined, first.signal)) {
       if (event.type === 'done') {
-        if (answered) return out.push(event);
+        if (answered) {
+          out.push(event);
+          return;
+        }
         kept = event.message;
-        retry = true;
+        retry = 'empty';
         break;
       }
-      if (event.type === 'error') return out.push(event);
+      if (event.type === 'error') {
+        out.push(event);
+        return;
+      }
       out.push(event);
       kept = event.partial;
       if (event.type === 'thinking_start') openThinking = event.contentIndex;
@@ -46,7 +60,7 @@ export async function streamWithBudget(attempt: Attempt, budget: number, signal:
       if (event.type === 'thinking_delta') {
         notes += event.delta;
         if (++tokens >= budget && !answered) {
-          retry = true;
+          retry = 'budget';
           break;
         }
       }
@@ -78,6 +92,7 @@ export async function streamWithBudget(attempt: Attempt, budget: number, signal:
     else if (event.type === 'error') out.push({ ...event, error: merge(event.error) });
     else out.push({ ...event, contentIndex: event.contentIndex + before.length, partial: merge(event.partial) });
   }
+  return { reason: retry, tokens };
 }
 
 // The aborted request never reports usage, so its thinking is counted from the stream and its

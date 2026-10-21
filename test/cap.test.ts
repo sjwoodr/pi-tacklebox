@@ -58,13 +58,14 @@ async function run(attempts: ReturnType<typeof reply>[], budget: number) {
     notes.push(note);
     return attempts[n++](signal);
   };
-  await streamWithBudget(attempt, budget, undefined, { push: (e) => events.push(e), end() {} });
-  return { events, notes, final: events.at(-1) };
+  const cut = await streamWithBudget(attempt, budget, undefined, { push: (e) => events.push(e), end() {} });
+  return { events, notes, final: events.at(-1), cut };
 }
 
 test('a reply that finishes under the budget passes through unchanged', async () => {
-  const { events, notes, final } = await run([reply(3, 'hi')], 10);
+  const { events, notes, final, cut } = await run([reply(3, 'hi')], 10);
   assert.deepEqual(notes, [undefined]);
+  assert.equal(cut, undefined, 'nothing to report');
   assert.equal(events.filter((e) => e.type === 'thinking_delta').length, 3);
   assert.equal(final?.type, 'done');
   assert.deepEqual(final.type === 'done' && final.message.content.map((c) => c.type), ['thinking', 'text']);
@@ -72,8 +73,9 @@ test('a reply that finishes under the budget passes through unchanged', async ()
 
 test('at the budget it aborts, then answers with thinking off and the notes', async () => {
   let aborted = false;
-  const { events, notes, final } = await run([reply(50, 'never', () => (aborted = true)), reply(0, 'answer')], 5);
+  const { events, notes, final, cut } = await run([reply(50, 'never', () => (aborted = true)), reply(0, 'answer')], 5);
   assert.ok(aborted, 'the first request is aborted');
+  assert.deepEqual(cut, { reason: 'budget', tokens: 5 });
   assert.deepEqual(notes, [undefined, 'ttttt']);
   assert.equal(events.filter((e) => e.type === 'thinking_delta').length, 5);
   assert.equal(events.filter((e) => e.type === 'start').length, 1, 'one message, one start');
@@ -92,8 +94,9 @@ test('at the budget it aborts, then answers with thinking off and the notes', as
 });
 
 test('reasoning that ends with nothing said gets the same follow-up', async () => {
-  const { notes, final } = await run([reply(3, ''), reply(0, 'answer')], 10);
+  const { notes, final, cut } = await run([reply(3, ''), reply(0, 'answer')], 10);
   assert.deepEqual(notes, [undefined, 'ttt']);
+  assert.deepEqual(cut, { reason: 'empty', tokens: 3 });
   assert.deepEqual(final?.type === 'done' && final.message.content.map((c) => c.type), ['thinking', 'text']);
 });
 

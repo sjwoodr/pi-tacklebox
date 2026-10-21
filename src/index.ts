@@ -8,8 +8,8 @@ import {
   type SimpleStreamOptions,
   type TranscriptContext,
 } from '@earendil-works/pi-ai/compat';
-import { type ExtensionAPI, getAgentDir } from '@earendil-works/pi-coding-agent';
-import { answerNow, budgetFor, type Rule, streamWithBudget } from './cap.ts';
+import { type ExtensionAPI, type ExtensionContext, getAgentDir } from '@earendil-works/pi-coding-agent';
+import { answerNow, budgetFor, type Cut, type Rule, streamWithBudget } from './cap.ts';
 
 const CONFIG = 'think-budget.json';
 
@@ -29,6 +29,25 @@ export default function (pi: ExtensionAPI) {
   });
   const rules = loadRules();
 
+  // The stream has no context of its own, so cuts are reported through the session's UI:
+  // a notice and a running count in the footer, or a stderr line where there is no UI (pi -p).
+  let ui: ExtensionContext['ui'] | undefined;
+  let cuts = 0;
+  pi.on('session_start', (_event, ctx) => {
+    ui = ctx.hasUI ? ctx.ui : undefined;
+    cuts = 0;
+  });
+  const report = (cut: Cut, budget: number) => {
+    const message =
+      cut.reason === 'budget'
+        ? `Thinking capped at ${budget} tokens; asked for the answer`
+        : `Reasoning ended without an answer after ${cut.tokens} tokens; asked for one`;
+    cuts++;
+    if (!ui) return void process.stderr.write(`[think-budget] ${message}\n`);
+    ui.notify(message, 'info');
+    ui.setStatus('think-budget', `think cap: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}`);
+  };
+
   const streamSimple = (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
     const api = getApiProvider(model.api);
     if (!api) throw new Error(`No API provider registered for api: ${model.api}`);
@@ -47,6 +66,7 @@ export default function (pi: ExtensionAPI) {
             { ...options, reasoning: undefined, signal },
           );
     streamWithBudget(attempt, budget, options?.signal, out)
+      .then((cut) => cut && report(cut, budget))
       .catch((err) =>
         out.push({
           type: 'error',

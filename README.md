@@ -61,6 +61,24 @@ pi --thinking low --think-budget 0 "..."     # no cap
 
 `--think-budget` only affects models that match a rule.
 
+## Seeing the cuts
+
+Each cut shows a notice, such as "Thinking capped at 200 tokens; asked for the answer", and the
+footer keeps a count for the session (`think cap: 3 cuts`). Without a UI (`pi -p`, `--mode json`)
+the notice goes to stderr, prefixed `[think-budget]`.
+
+## Ollama ignores pi's max tokens
+
+This is separate from thinking, but it bites the same setups: pi sends a model's `maxTokens` as
+`max_completion_tokens`, which Ollama ignores, so a reply that loops runs until something else stops
+it. Have pi send `max_tokens` instead, in each Ollama model's `compat` in `models.json`:
+
+```json
+"compat": { "maxTokensField": "max_tokens" }
+```
+
+With Ollama the limit covers thinking and answer together, so leave room for the thinking budget.
+
 ## How it hooks in
 
 The extension registers each configured provider again with only a stream function, so the
