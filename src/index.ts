@@ -9,7 +9,7 @@ import {
   type TranscriptContext,
 } from '@earendil-works/pi-ai/compat';
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from '@earendil-works/pi-coding-agent';
-import { answerNow, budgetFor, type Cut, type Rule, streamWithBudget } from './cap.ts';
+import { answerNow, budgetFor, type Cut, type Rule, streamWithBudget, unmatchedRules } from './cap.ts';
 
 const CONFIG = 'think-budget.json';
 
@@ -33,9 +33,13 @@ export default function (pi: ExtensionAPI) {
   // a notice and a running count in the footer, or a stderr line where there is no UI (pi -p).
   let ui: ExtensionContext['ui'] | undefined;
   let cuts = 0;
+  const say = (message: string, type: 'info' | 'warning') =>
+    ui ? ui.notify(message, type) : process.stderr.write(`[think-budget] ${message}\n`);
   pi.on('session_start', (_event, ctx) => {
     ui = ctx.hasUI ? ctx.ui : undefined;
     cuts = 0;
+    for (const problem of unmatchedRules(rules, ctx.modelRegistry.getAll()))
+      say(`${CONFIG}: ${problem}, so that rule caps nothing`, 'warning');
   });
   const report = (cut: Cut, budget: number) => {
     const message =
@@ -43,9 +47,8 @@ export default function (pi: ExtensionAPI) {
         ? `Thinking capped at ${budget} tokens; asked for the answer`
         : `Reasoning ended without an answer after ${cut.tokens} tokens; asked for one`;
     cuts++;
-    if (!ui) return void process.stderr.write(`[think-budget] ${message}\n`);
-    ui.notify(message, 'info');
-    ui.setStatus('think-budget', `think cap: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}`);
+    say(message, 'info');
+    ui?.setStatus('think-budget', `think cap: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}`);
   };
 
   const streamSimple = (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {

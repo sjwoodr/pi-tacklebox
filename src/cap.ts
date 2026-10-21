@@ -126,3 +126,10 @@ export function budgetFor(rules: Rule[], provider: string, model: string, level:
   const cap = override ? Number(override) : typeof rule.budget === 'number' ? rule.budget : rule.budget[level as Level];
   return cap && cap > 0 ? cap : undefined;
 }
+
+/** Rules that match no known model, described for a warning: a typo here silently caps nothing. */
+export function unmatchedRules(rules: Rule[], models: { provider: string; id: string }[]) {
+  return rules
+    .filter((r) => !models.some((m) => m.provider === r.provider && (!r.model || r.model === '*' || r.model === m.id)))
+    .map((r) => (!r.model || r.model === '*' ? `provider "${r.provider}" has no models` : `no model "${r.provider}/${r.model}"`));
+}

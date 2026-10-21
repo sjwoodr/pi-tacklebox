@@ -47,7 +47,9 @@ Create `think-budget.json` in pi's agent directory (`~/.pi/agent/`, or `$PI_CODI
 | `budget` | One cap for every thinking level, or a cap per level. A level left out is not capped |
 | `api` | The API the provider's models use. Defaults to `"openai-completions"` |
 
-The first matching rule wins. Nothing changes when thinking is off.
+The first matching rule wins. Nothing changes when thinking is off. A rule that names no known
+model (check the ids with `pi --list-models`) gets a warning when the session starts, since it would
+otherwise cap nothing.
 
 The cap applies to the thinking before the model starts its answer. Ollama streams about one
 token per chunk, so the extension counts chunks as tokens.

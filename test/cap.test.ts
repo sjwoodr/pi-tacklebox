@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai';
-import { type Attempt, budgetFor, type Rule, streamWithBudget } from '../src/cap.ts';
+import { type Attempt, budgetFor, type Rule, streamWithBudget, unmatchedRules } from '../src/cap.ts';
 
 const usage = () => ({
   input: 10,
@@ -119,4 +119,15 @@ test('budgetFor picks the rule, the level and the flag', () => {
   assert.equal(budgetFor(rules, 'openai', 'gemma', 'low'), undefined);
   assert.equal(budgetFor(rules, 'ollama', 'gemma', 'medium', '150'), 150);
   assert.equal(budgetFor(rules, 'ollama', 'gemma', 'low', '0'), undefined, '--think-budget 0 turns it off');
+});
+
+test('unmatchedRules names rules that match no model', () => {
+  const models = [{ provider: 'ollama', id: 'gemma4-26b-a4b-64k:latest' }];
+  const rules: Rule[] = [
+    { provider: 'ollama', model: 'gemma4-26b-a4b-64k:latest', budget: 200 },
+    { provider: 'ollama', model: 'gemma4:26b', budget: 200 },
+    { provider: 'ollama', budget: 200 },
+    { provider: 'lmstudio', budget: 200 },
+  ];
+  assert.deepEqual(unmatchedRules(rules, models), ['no model "ollama/gemma4:26b"', 'provider "lmstudio" has no models']);
 });
