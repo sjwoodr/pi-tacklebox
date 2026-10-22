@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai';
-import { type Attempt, budgetFor, type Rule, streamWithBudget, unmatchedRules } from '../src/cap.ts';
+import { type Attempt, budgetFor, MAX_ASKS, type Rule, streamWithBudget, unmatchedRules } from '../src/cap.ts';
 
 const usage = () => ({
   input: 10,
@@ -162,9 +162,17 @@ test('an empty follow-up is asked once more, after its own blocks', async () => 
   assert.equal(final?.type === 'done' && final.message.usage.output, 5 + 5 + 5, 'every request counted');
 });
 
-test('two empty follow-ups end the reply instead of asking forever', async () => {
-  const { notes, final, cut } = await run([reply(50, 'never'), reply(0, ''), reply(0, ''), reply(0, 'unused')], 5);
-  assert.equal(notes.length, 3);
-  assert.equal(cut?.asked, 2);
+test('empty follow-ups are asked again up to MAX_ASKS, then the reply ends', async () => {
+  const empties = Array.from({ length: MAX_ASKS }, () => reply(0, ''));
+  const { notes, final, cut } = await run([reply(50, 'never'), ...empties, reply(0, 'unused')], 5);
+  assert.equal(notes.length, 1 + MAX_ASKS);
+  assert.equal(cut?.asked, MAX_ASKS);
   assert.equal(final?.type, 'done');
+});
+
+test('a third follow-up that answers ends the asking', async () => {
+  const { notes, cut, final } = await run([reply(50, 'never'), reply(0, ''), reply(0, ''), reply(0, 'answer')], 5);
+  assert.equal(notes.length, 4);
+  assert.equal(cut?.asked, 3);
+  assert.deepEqual(final?.type === 'done' && final.message.content.map((c) => c.type), ['thinking', 'text']);
 });

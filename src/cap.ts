@@ -8,7 +8,7 @@ export interface Sink {
 
 /**
  * One request to the model. `notes` is set on a follow-up after a cut, with thinking off; `again`
- * marks the second follow-up, after the first came back with nothing.
+ * marks a later follow-up, after the one before came back with nothing.
  */
 export type Attempt = (
   notes: string | undefined,
@@ -21,6 +21,13 @@ export const answerNow = (notes: string, again = false) =>
   (again ? 'Your last reply was empty. ' : '') +
   'Thinking time is up. Continue now: answer, or make the tool call you need.';
 
+/**
+ * How many follow-ups a reply gets before it ends empty. An empty follow-up is usually a tool call
+ * the server dropped: Gemma on Ollama wrote `call{edit{` for `call:edit{`, or an empty call, in
+ * 3 to 5 of 10 replays of one cut, and Ollama returns nothing for those, without an error.
+ */
+export const MAX_ASKS = 4;
+
 /** Why a reply got the follow-up: the budget ran out, or the reasoning ended with nothing said. */
 export type Cut = { reason: 'budget' | 'empty'; tokens: number; asked: number };
 
@@ -28,7 +35,7 @@ export type Cut = { reason: 'budget' | 'empty'; tokens: number; asked: number };
  * Streams one reply that thinks for at most `budget` tokens. At the cap the request is aborted and
  * the model is asked to answer straight away with thinking off, its reasoning so far passed back as
  * notes. The same follow-up runs when the reasoning ends with nothing said, which otherwise leaves
- * an empty reply, and once more if the follow-up itself says nothing. pi sees one assistant
+ * an empty reply, and again (up to MAX_ASKS in all) while the follow-up itself says nothing. pi sees one assistant
  * message: the thinking, then the follow-ups' content.
  */
 
@@ -101,7 +108,7 @@ export async function streamWithBudget(
     usage: withThinking(message.usage, extra),
   });
   for (let asked = 1; ; asked++) {
-    const last = asked === 2;
+    const last = asked === MAX_ASKS;
     for await (const event of attempt(notes, signal ?? new AbortController().signal, asked > 1)) {
       if (event.type === 'start') continue;
       if (event.type === 'done') {

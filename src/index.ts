@@ -46,7 +46,7 @@ export default function (pi: ExtensionAPI) {
       cut.reason === 'budget'
         ? `Thinking capped at ${budget} tokens; asked for the answer`
         : `Reasoning ended without an answer after ${cut.tokens} tokens; asked for one`;
-    const asked = cut.asked > 1 ? ' (asked twice: the first follow-up was empty)' : '';
+    const asked = cut.asked > 1 ? ` (asked ${cut.asked} times: ${cut.asked - 1} follow-up${cut.asked > 2 ? 's were' : ' was'} empty)` : '';
     cuts++;
     say(message + asked, 'info');
     ui?.setStatus('think-budget', `think cap: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}`);

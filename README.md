@@ -12,8 +12,11 @@ This extension enforces the cap on pi's side, the way budget forcing works:
 2. At the cap it aborts the request and sends one more, with thinking off. That request
    carries the reasoning so far as notes and asks the model to answer or make its tool call now.
 3. When the reasoning ends with nothing said, it sends the same follow-up.
-4. When a follow-up comes back with nothing either (no text, no tool call), it asks once more,
-   so the agent does not stop with an empty reply. It never asks a third time.
+4. When a follow-up comes back with nothing either (no text, no tool call), it asks again, up to
+   four follow-ups in all, so the agent does not stop with an empty reply. An empty follow-up is
+   usually a tool call the server dropped: Gemma on Ollama sometimes writes one slightly malformed
+   (`call{edit{` for `call:edit{`), and Ollama returns nothing for it, without an error. In replays
+   of one cut that happened 3 to 5 times in 10, so two asks still ended empty about a time in five.
 
 pi sees one assistant message: the thinking, then the follow-up's answer or tool call.
 
