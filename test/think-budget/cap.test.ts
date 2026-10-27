@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai';
-import { type Attempt, budgetFor, MAX_ASKS, type Rule, streamWithBudget, unmatchedRules } from '../src/cap.ts';
+import { type Attempt, budgetFor, MAX_ASKS, type Rule, streamWithBudget, unmatchedRules } from '../../src/think-budget/cap.ts';
 
 const usage = () => ({
   input: 10,

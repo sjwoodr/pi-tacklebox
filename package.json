@@ -1,7 +1,7 @@
 {
-  "name": "pi-think-budget",
+  "name": "pi-tacklebox",
   "version": "0.1.0",
-  "description": "Thinking token budgets for pi on servers that have none, such as Ollama: stop the reasoning at the cap and ask for the answer, with the reasoning so far as notes.",
+  "description": "A box of pi extensions for running local models: thinking budgets, and more to come.",
   "type": "module",
   "license": "MIT",
   "author": "Steve Woodruff",
@@ -9,22 +9,24 @@
     "pi-package",
     "pi",
     "ollama",
+    "local-models",
     "thinking",
     "reasoning",
     "budget"
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./src/think-budget/index.ts"
     ]
   },
   "files": [
     "src",
+    "docs",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
     "check": "tsc -p ."
   },
   "peerDependencies": {
