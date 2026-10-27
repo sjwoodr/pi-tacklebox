@@ -18,7 +18,7 @@ pi install git:https://github.com/sjwoodr/pi-tacklebox
 
 If you used the standalone `pi-think-budget` before, remove
 `git:https://github.com/sjwoodr/pi-think-budget` from `~/.pi/agent/settings.json`, or the budget
-loads twice. Its configuration (`~/.pi/agent/think-budget.json`) is unchanged.
+loads twice. Its configuration (`~/.pi/agent/think-budget.json`) is still read.
 Likewise remove any loose copies of these extensions from `~/.pi/agent/extensions/` (a second
 `web_search` tool stops pi from starting).
 
@@ -45,7 +45,8 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   ollama.com).
 - `outlineReads.maxChars`: a whole-file read returning more text than this gets the outline.
 
-think-budget has its own file, `think-budget.json`: see [docs/think-budget.md](docs/think-budget.md).
+think-budget's rules go in a `thinkBudget` section of the same file, or, without one, in the older
+`think-budget.json`: see [docs/think-budget.md](docs/think-budget.md).
 
 To leave an extension out entirely, filter it in pi's settings:
 

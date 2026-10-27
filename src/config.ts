@@ -11,6 +11,8 @@ export interface Config {
   turnTimer: { enabled: boolean };
   outlineReads: { enabled: boolean; maxChars: number };
   search: { backend: SearchBackend; searxngUrl: string; ollamaUrl: string };
+  /** think-budget's rules (see src/think-budget/cap.ts); absent means think-budget.json is read instead. */
+  thinkBudget?: { rules: unknown[] };
 }
 
 // Anything that reaches outside the machine (search) or changes what the model sees
@@ -27,8 +29,15 @@ const BACKENDS: SearchBackend[] = ['off', 'searxng', 'ollama'];
 export function parseConfig(raw: unknown): Config {
   const file = (raw ?? {}) as Record<string, Record<string, unknown> | undefined>;
   if (typeof file !== 'object' || Array.isArray(file)) throw new Error('expected a JSON object');
-  const out = structuredClone(DEFAULTS);
+  const out: Config = structuredClone(DEFAULTS);
   for (const section of Object.keys(file)) {
+    if (section === 'thinkBudget') {
+      const given = file.thinkBudget;
+      if (!given || typeof given !== 'object' || !Array.isArray(given.rules) || Object.keys(given).length !== 1)
+        throw new Error('"thinkBudget" should be { "rules": [...] }');
+      out.thinkBudget = { rules: given.rules };
+      continue;
+    }
     if (!(section in out)) throw new Error(`unknown section "${section}"`);
     const given = file[section] ?? {};
     const target = out[section as keyof Config] as unknown as Record<string, unknown>;

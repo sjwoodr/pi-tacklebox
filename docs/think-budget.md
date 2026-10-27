@@ -33,16 +33,24 @@ Review third-party pi extensions before installing them: they run with your user
 
 ## Configure
 
-Create `think-budget.json` in pi's agent directory (`~/.pi/agent/`, or `$PI_CODING_AGENT_DIR`):
+Put the rules in a `thinkBudget` section of `tacklebox.json` in pi's agent directory
+(`~/.pi/agent/`, or `$PI_CODING_AGENT_DIR`):
 
 ```json
 {
-  "rules": [
-    { "provider": "ollama", "model": "gemma4:26b", "budget": 200 },
-    { "provider": "ollama", "model": "gpt-oss:20b", "budget": { "low": 200, "medium": 400, "high": 800 } }
-  ]
+  "thinkBudget": {
+    "rules": [
+      { "provider": "ollama", "model": "gemma4:26b", "budget": 200 },
+      { "provider": "ollama", "model": "gpt-oss:20b", "budget": { "low": 200, "medium": 400, "high": 800 } }
+    ]
+  }
 }
 ```
+
+Without that section, the rules are read from `think-budget.json` in the same directory (the
+standalone pi-think-budget's file, `{ "rules": [...] }`), so an existing setup keeps working. When
+both are there, the section wins and a warning at startup says the old file is ignored; an empty
+`"rules": []` in the section is how to switch the old file off.
 
 | Field | Meaning |
 |---|---|

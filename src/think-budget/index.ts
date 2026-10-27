@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   type Api,
@@ -9,25 +9,31 @@ import {
   type TranscriptContext,
 } from '@earendil-works/pi-ai/compat';
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from '@earendil-works/pi-coding-agent';
+import { CONFIG, loadConfig } from '../config.ts';
 import { answerNow, budgetFor, type Cut, type Rule, streamWithBudget, unmatchedRules } from './cap.ts';
 
-const CONFIG = 'think-budget.json';
+/** The old standalone file, still read when tacklebox.json has no thinkBudget section. */
+const FALLBACK = 'think-budget.json';
 
-function loadRules(): Rule[] {
+/** The rules and the file they came from: tacklebox.json's thinkBudget section first, else think-budget.json. */
+export function loadRules(dir = getAgentDir()): { rules: Rule[]; source: string; ignored?: string } {
+  const own = loadConfig(dir).thinkBudget;
+  const fallback = join(dir, FALLBACK);
+  if (own) return { rules: own.rules as Rule[], source: CONFIG, ignored: existsSync(fallback) ? FALLBACK : undefined };
   try {
-    return JSON.parse(readFileSync(join(getAgentDir(), CONFIG), 'utf8')).rules ?? [];
+    return { rules: JSON.parse(readFileSync(fallback, 'utf8')).rules ?? [], source: FALLBACK };
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw new Error(`${CONFIG}: ${(err as Error).message}`);
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { rules: [], source: CONFIG };
+    throw new Error(`${FALLBACK}: ${(err as Error).message}`);
   }
 }
 
 export default function (pi: ExtensionAPI) {
   pi.registerFlag('think-budget', {
     type: 'string',
-    description: 'Thinking token cap for models in think-budget.json (0 turns the cap off)',
+    description: 'Thinking token cap for the models with think-budget rules (0 turns the cap off)',
   });
-  const rules = loadRules();
+  const { rules, source, ignored } = loadRules();
 
   // The stream has no context of its own, so cuts are reported through the session's UI:
   // a notice and a running count in the footer, or a stderr line where there is no UI (pi -p).
@@ -38,8 +44,9 @@ export default function (pi: ExtensionAPI) {
   pi.on('session_start', (_event, ctx) => {
     ui = ctx.hasUI ? ctx.ui : undefined;
     cuts = 0;
+    if (ignored) say(`${ignored} is ignored: ${source} has a thinkBudget section`, 'warning');
     for (const problem of unmatchedRules(rules, ctx.modelRegistry.getAll()))
-      say(`${CONFIG}: ${problem}, so that rule caps nothing`, 'warning');
+      say(`${source}: ${problem}, so that rule caps nothing`, 'warning');
   });
   const report = (cut: Cut, budget: number) => {
     const message =
