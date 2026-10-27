@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai';
-import { type Attempt, budgetFor, MAX_ASKS, type Rule, streamWithBudget, unmatchedRules } from '../../src/think-budget/cap.ts';
+import { type Attempt, budgetFor, MAX_ASKS, modelMatches, type Rule, streamWithBudget, unmatchedRules } from '../../src/think-budget/cap.ts';
 
 const usage = () => ({
   input: 10,
@@ -175,4 +175,22 @@ test('a third follow-up that answers ends the asking', async () => {
   assert.equal(notes.length, 4);
   assert.equal(cut?.asked, 3);
   assert.deepEqual(final?.type === 'done' && final.message.content.map((c) => c.type), ['thinking', 'text']);
+});
+
+test('a model pattern with * covers a family, and the first matching rule still wins', () => {
+  assert.equal(modelMatches('gemma4*', 'gemma4-26b-a4b-ud-64k:latest'), true);
+  assert.equal(modelMatches('gemma4*', 'gpt-oss:120b-cloud'), false);
+  assert.equal(modelMatches('*:cloud', 'beam:cloud'), true);
+  assert.equal(modelMatches('gemma4.e4b', 'gemma4-e4b'), false, 'a dot is a dot, not any character');
+  assert.equal(modelMatches('gemma4', 'gemma4-e4b'), false, 'no * means the exact id');
+  const rules: Rule[] = [
+    { provider: 'ollama', model: 'gemma4-e4b-q8-64k:latest', budget: 100 },
+    { provider: 'ollama', model: 'gemma4*', budget: 200 },
+  ];
+  assert.equal(budgetFor(rules, 'ollama', 'gemma4-e4b-q8-64k:latest', 'low'), 100);
+  assert.equal(budgetFor(rules, 'ollama', 'gemma4-26b-a4b-ud-64k:latest', 'low'), 200);
+  assert.equal(budgetFor(rules, 'ollama', 'gpt-oss:120b-cloud', 'low'), undefined, 'cloud models stay uncapped');
+  assert.deepEqual(unmatchedRules([{ provider: 'ollama', model: 'gemma5*', budget: 1 }], [{ provider: 'ollama', id: 'gemma4-e4b' }]), [
+    'no model matches "ollama/gemma5*"',
+  ]);
 });

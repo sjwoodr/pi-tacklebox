@@ -55,11 +55,12 @@ both are there, the section wins and a warning at startup says the old file is i
 | Field | Meaning |
 |---|---|
 | `provider` | The provider name in your `models.json` |
-| `model` | An exact model id. Leave it out, or use `"*"`, for every model of the provider |
+| `model` | A model id, or a pattern where `*` matches anything (`"gemma4*"`). Leave it out, or use `"*"`, for every model of the provider |
 | `budget` | One cap for every thinking level, or a cap per level. A level left out is not capped |
 | `api` | The API the provider's models use. Defaults to `"openai-completions"` |
 
-The first matching rule wins. Nothing changes when thinking is off. A rule that names no known
+The first matching rule wins, so put exact ids before a pattern that would also cover them, and a
+default such as `"gemma4*"` last. Nothing changes when thinking is off. A rule that names no known
 model (check the ids with `pi --list-models`) gets a warning when the session starts, since it would
 otherwise cap nothing.
 

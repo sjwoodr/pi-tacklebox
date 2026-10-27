@@ -146,7 +146,7 @@ export type Level = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface Rule {
   provider: string;
-  /** Exact model id; omitted or "*" means every model of the provider. */
+  /** A model id, where `*` matches any run of characters ("gemma4*"); omitted or "*" means every model of the provider. */
   model?: string;
   /** The API the provider's models use (default "openai-completions"). */
   api?: string;
@@ -154,10 +154,18 @@ export interface Rule {
   budget: number | Partial<Record<Level, number>>;
 }
 
+/** Whether a rule's model (an id, or a pattern with `*`) covers this model id. */
+export function modelMatches(pattern: string | undefined, id: string): boolean {
+  if (!pattern || pattern === '*') return true;
+  if (!pattern.includes('*')) return pattern === id;
+  const regex = pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${regex}$`).test(id);
+}
+
 /** The cap for this request, or undefined to pass it through. `override` is the --think-budget flag. */
 export function budgetFor(rules: Rule[], provider: string, model: string, level: string | undefined, override?: string) {
   if (!level || level === 'off') return undefined;
-  const rule = rules.find((r) => r.provider === provider && (!r.model || r.model === '*' || r.model === model));
+  const rule = rules.find((r) => r.provider === provider && modelMatches(r.model, model));
   if (!rule) return undefined;
   const cap = override ? Number(override) : typeof rule.budget === 'number' ? rule.budget : rule.budget[level as Level];
   return cap && cap > 0 ? cap : undefined;
@@ -166,6 +174,12 @@ export function budgetFor(rules: Rule[], provider: string, model: string, level:
 /** Rules that match no known model, described for a warning: a typo here silently caps nothing. */
 export function unmatchedRules(rules: Rule[], models: { provider: string; id: string }[]) {
   return rules
-    .filter((r) => !models.some((m) => m.provider === r.provider && (!r.model || r.model === '*' || r.model === m.id)))
-    .map((r) => (!r.model || r.model === '*' ? `provider "${r.provider}" has no models` : `no model "${r.provider}/${r.model}"`));
+    .filter((r) => !models.some((m) => m.provider === r.provider && modelMatches(r.model, m.id)))
+    .map((r) =>
+      !r.model || r.model === '*'
+        ? `provider "${r.provider}" has no models`
+        : r.model.includes('*')
+          ? `no model matches "${r.provider}/${r.model}"`
+          : `no model "${r.provider}/${r.model}"`,
+    );
 }
