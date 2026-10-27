@@ -1,0 +1,60 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
+
+/** tacklebox.json in pi's agent directory. think-budget keeps its own file (think-budget.json). */
+export const CONFIG = 'tacklebox.json';
+
+export type SearchBackend = 'off' | 'searxng' | 'ollama';
+
+export interface Config {
+  turnTimer: { enabled: boolean };
+  outlineReads: { enabled: boolean; maxChars: number };
+  search: { backend: SearchBackend; searxngUrl: string; ollamaUrl: string };
+}
+
+// Anything that reaches outside the machine (search) or changes what the model sees
+// (outline-reads) is off until the config turns it on.
+export const DEFAULTS: Config = {
+  turnTimer: { enabled: true },
+  outlineReads: { enabled: false, maxChars: 20_000 },
+  search: { backend: 'off', searxngUrl: 'http://127.0.0.1:8888', ollamaUrl: 'http://127.0.0.1:11434' },
+};
+
+const BACKENDS: SearchBackend[] = ['off', 'searxng', 'ollama'];
+
+/** The defaults with the file's settings on top. A setting of the wrong type is an error, not ignored. */
+export function parseConfig(raw: unknown): Config {
+  const file = (raw ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  if (typeof file !== 'object' || Array.isArray(file)) throw new Error('expected a JSON object');
+  const out = structuredClone(DEFAULTS);
+  for (const section of Object.keys(file)) {
+    if (!(section in out)) throw new Error(`unknown section "${section}"`);
+    const given = file[section] ?? {};
+    const target = out[section as keyof Config] as unknown as Record<string, unknown>;
+    for (const [key, value] of Object.entries(given)) {
+      if (!(key in target)) throw new Error(`unknown setting "${section}.${key}"`);
+      if (typeof value !== typeof target[key]) throw new Error(`"${section}.${key}" should be a ${typeof target[key]}`);
+      target[key] = value;
+    }
+  }
+  if (!BACKENDS.includes(out.search.backend)) {
+    throw new Error(`"search.backend" should be one of ${BACKENDS.map((b) => `"${b}"`).join(', ')}`);
+  }
+  return out;
+}
+
+/** The config from pi's agent directory; no file means the defaults. Each extension reads it at load. */
+export function loadConfig(dir = getAgentDir()): Config {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(join(dir, CONFIG), 'utf8'));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`${CONFIG}: ${(err as Error).message}`);
+  }
+  try {
+    return parseConfig(raw);
+  } catch (err) {
+    throw new Error(`${CONFIG}: ${(err as Error).message}`);
+  }
+}

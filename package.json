@@ -1,7 +1,7 @@
 {
   "name": "pi-tacklebox",
   "version": "0.1.0",
-  "description": "A box of pi extensions for running local models: thinking budgets, and more to come.",
+  "description": "A box of pi extensions for running local models: thinking budgets, a turn timer, outlines for big files, and web search.",
   "type": "module",
   "license": "MIT",
   "author": "Steve Woodruff",
@@ -12,11 +12,16 @@
     "local-models",
     "thinking",
     "reasoning",
-    "budget"
+    "budget",
+    "web-search",
+    "searxng"
   ],
   "pi": {
     "extensions": [
-      "./src/think-budget/index.ts"
+      "./src/think-budget/index.ts",
+      "./src/turn-timer/index.ts",
+      "./src/outline-reads/index.ts",
+      "./src/search/index.ts"
     ]
   },
   "files": [
