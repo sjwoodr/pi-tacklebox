@@ -11,16 +11,21 @@ export interface Config {
   turnTimer: { enabled: boolean };
   outlineReads: { enabled: boolean; maxChars: number };
   search: { backend: SearchBackend; searxngUrl: string; ollamaUrl: string };
+  nudge: { enabled: boolean; maxPerPrompt: number };
+  verifyDone: { enabled: boolean; command: string; maxRounds: number; timeoutSeconds: number };
   /** think-budget's rules (see src/think-budget/cap.ts); absent means think-budget.json is read instead. */
   thinkBudget?: { rules: unknown[] };
 }
 
-// Anything that reaches outside the machine (search) or changes what the model sees
-// (outline-reads) is off until the config turns it on.
+// Anything that reaches outside the machine (search), changes what the model sees (outline-reads)
+// or sends it messages of its own (nudge, verify-done) is off until the config turns it on.
 export const DEFAULTS: Config = {
   turnTimer: { enabled: true },
   outlineReads: { enabled: false, maxChars: 20_000 },
   search: { backend: 'off', searxngUrl: 'http://127.0.0.1:8888', ollamaUrl: 'http://127.0.0.1:11434' },
+  nudge: { enabled: false, maxPerPrompt: 2 },
+  // An empty command means detect it from the project (package.json, go.mod, Cargo.toml, pytest, Makefile).
+  verifyDone: { enabled: false, command: '', maxRounds: 2, timeoutSeconds: 120 },
 };
 
 const BACKENDS: SearchBackend[] = ['off', 'searxng', 'ollama'];

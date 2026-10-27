@@ -5,12 +5,14 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { CONFIG, DEFAULTS, loadConfig, parseConfig } from '../src/config.ts';
 
-test('no file, or an empty one, gives the defaults: timer on, outlines and search off', () => {
+test('no file, or an empty one, gives the defaults: timer on; outlines, search, nudge and verify-done off', () => {
   assert.deepEqual(parseConfig(undefined), DEFAULTS);
   assert.deepEqual(parseConfig({}), DEFAULTS);
   assert.equal(DEFAULTS.turnTimer.enabled, true);
   assert.equal(DEFAULTS.outlineReads.enabled, false);
   assert.equal(DEFAULTS.search.backend, 'off');
+  assert.equal(DEFAULTS.nudge.enabled, false);
+  assert.equal(DEFAULTS.verifyDone.enabled, false);
 });
 
 test('settings override the defaults one key at a time', () => {
