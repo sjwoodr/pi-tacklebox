@@ -15,7 +15,15 @@ import { answerNow, budgetFor, type Cut, type Rule, streamWithBudget, unmatchedR
 /** The old standalone file, still read when tacklebox.json has no thinkBudget section. */
 const FALLBACK = 'think-budget.json';
 
-/** The rules and the file they came from: tacklebox.json's thinkBudget section first, else think-budget.json. */
+/** Used when neither file has rules: Gemma on Ollama can think for minutes, and these are the caps
+ *  measured and used with it (200 at medium kept all of unlimited thinking's accuracy on a French
+ *  grading set and removed the runaways). Any rules of your own replace these, even an empty list. */
+export const DEFAULT_RULES: Rule[] = [
+  { provider: 'ollama', model: 'gemma*', budget: { minimal: 100, low: 200, medium: 400, high: 800 } },
+];
+export const BUILT_IN = 'the built-in default';
+
+/** The rules and where they came from: tacklebox.json's thinkBudget section, else think-budget.json, else DEFAULT_RULES. */
 export function loadRules(dir = getAgentDir()): { rules: Rule[]; source: string; ignored?: string } {
   const own = loadConfig(dir).thinkBudget;
   const fallback = join(dir, FALLBACK);
@@ -23,7 +31,7 @@ export function loadRules(dir = getAgentDir()): { rules: Rule[]; source: string;
   try {
     return { rules: JSON.parse(readFileSync(fallback, 'utf8')).rules ?? [], source: FALLBACK };
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { rules: [], source: CONFIG };
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { rules: DEFAULT_RULES, source: BUILT_IN };
     throw new Error(`${FALLBACK}: ${(err as Error).message}`);
   }
 }
@@ -45,7 +53,8 @@ export default function (pi: ExtensionAPI) {
     ui = ctx.hasUI ? ctx.ui : undefined;
     cuts = 0;
     if (ignored) say(`${ignored} is ignored: ${source} has a thinkBudget section`, 'warning');
-    for (const problem of unmatchedRules(rules, ctx.modelRegistry.getAll()))
+    // The default names a model family that may not be installed, which is not a mistake.
+    if (source !== BUILT_IN) for (const problem of unmatchedRules(rules, ctx.modelRegistry.getAll()))
       say(`${source}: ${problem}, so that rule caps nothing`, 'warning');
   });
   const report = (cut: Cut, budget: number) => {

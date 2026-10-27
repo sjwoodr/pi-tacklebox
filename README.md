@@ -5,7 +5,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 
 | Extension | What it does | Default |
 |---|---|---|
-| think-budget | Caps thinking tokens on servers that have no thinking budget (Ollama): stops the reasoning at the cap and asks for the answer, with the reasoning so far as notes. [docs/think-budget.md](docs/think-budget.md) | on for the models in `think-budget.json` |
+| think-budget | Caps thinking tokens on servers that have no thinking budget (Ollama): stops the reasoning at the cap and asks for the answer, with the reasoning so far as notes. [docs/think-budget.md](docs/think-budget.md) | on for Gemma on Ollama (`gemma*`), or the models in your rules |
 | turn-timer | How long each turn took, in the status bar: `⏱ 45.6s · first 0.7s · read 10k @ 310/s · wrote 375 @ 60/s · 13k cached · 3 reqs` (prompt reading and writing timed apart, per request) | on |
 | outline-reads | A whole-file read of a large file returns its first 80 lines and an outline of definitions with line numbers, so a slow machine doesn't spend a minute reading 100 KB; reads with `offset`/`limit` are untouched | off |
 | search | `web_search` and `web_fetch` tools, through a SearXNG instance or Ollama's web search, with prompt guidance that includes today's date | off |

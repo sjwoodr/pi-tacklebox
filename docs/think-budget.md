@@ -52,6 +52,15 @@ standalone pi-think-budget's file, `{ "rules": [...] }`), so an existing setup k
 both are there, the section wins and a warning at startup says the old file is ignored; an empty
 `"rules": []` in the section is how to switch the old file off.
 
+With no rules in either place, a built-in default applies to Gemma on Ollama (`gemma*`, since it can
+think for minutes there):
+
+```json
+{ "provider": "ollama", "model": "gemma*", "budget": { "minimal": 100, "low": 200, "medium": 400, "high": 800 } }
+```
+
+Any rules of your own replace it, and an empty `"rules": []` turns it off.
+
 | Field | Meaning |
 |---|---|
 | `provider` | The provider name in your `models.json` |
