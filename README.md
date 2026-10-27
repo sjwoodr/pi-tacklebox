@@ -9,8 +9,8 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | turn-timer | How long each turn took, in the status bar: `⏱ 45.6s · first 0.7s · read 10k @ 310/s · wrote 375 @ 60/s · 13k cached · 3 reqs` (prompt reading and writing timed apart, per request) | on |
 | outline-reads | A whole-file read of a large file returns its first 80 lines and an outline of definitions with line numbers, so a slow machine doesn't spend a minute reading 100 KB; reads with `offset`/`limit` are untouched | off |
 | search | `web_search` and `web_fetch` tools, through a SearXNG instance or Ollama's web search, with prompt guidance that includes today's date | off |
-| nudge | When a run is about to end on a reply that can't be what the model meant (a tool call written out as text, an empty reply, or "let me update `x.ts`:" with no call), sends one short message saying what went wrong and asks for one more request; at most `maxPerPrompt` per prompt | off |
-| verify-done | When a run that edited files is about to end, runs the project's tests; if they fail, sends the model the end of the output and one more request, up to `maxRounds`. Tests are also run before the first edit, and a suite that already failed isn't blamed on the change | off |
+| nudge | When a run is about to end on a reply that can't be what the model meant (a tool call written out as text, an empty reply, or "let me update `x.ts`:" with no call), sends one short message saying what went wrong and asks for one more request; at most `maxPerPrompt` per prompt | on |
+| verify-done | When a run that edited files is about to end, runs the project's tests; if they fail, sends the model the end of the output and one more request, up to `maxRounds`. Tests are also run before the first edit, and a suite that already failed isn't blamed on the change | on |
 
 ## Install
 
@@ -38,8 +38,8 @@ and no file means the defaults below. A misspelt setting is an error at startup,
     "searxngUrl": "http://127.0.0.1:8888",
     "ollamaUrl": "http://127.0.0.1:11434"
   },
-  "nudge": { "enabled": false, "maxPerPrompt": 2 },
-  "verifyDone": { "enabled": false, "command": "", "maxRounds": 2, "timeoutSeconds": 120 }
+  "nudge": { "enabled": true, "maxPerPrompt": 2 },
+  "verifyDone": { "enabled": true, "command": "", "maxRounds": 2, "timeoutSeconds": 120 }
 }
 ```
 
@@ -48,6 +48,9 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   search through your local Ollama; needs `ollama signin`, and queries and fetched URLs go to
   ollama.com).
 - `outlineReads.maxChars`: a whole-file read returning more text than this gets the outline.
+- `verifyDone`: on by default, so it **runs the project's tests on its own** after any edit. In a repo
+  whose tests are slow or touch real services (a database, an API, a deploy), turn it off or set a
+  safe `command`.
 - `verifyDone.command`: the test command; empty means detect it (`npm`/`pnpm`/`yarn test` from
   `package.json`, `cargo test`, `go test ./...`, pytest, or a Makefile's `test` target). A run
   is killed after `timeoutSeconds`. It can't catch a change that passes the tests but isn't what

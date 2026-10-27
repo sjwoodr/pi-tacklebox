@@ -11,7 +11,8 @@
  *
  * It can't catch a change that passes the tests but isn't what was asked.
  *
- * Off by default; `"verifyDone": { "enabled": true }` in tacklebox.json turns it on.
+ * On by default; `"verifyDone": { "enabled": false }` in tacklebox.json turns it off. It runs the
+ * project's own tests, so turn it off (or set a safe command) where they are slow or touch real services.
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';

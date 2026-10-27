@@ -17,15 +17,17 @@ export interface Config {
   thinkBudget?: { rules: unknown[] };
 }
 
-// Anything that reaches outside the machine (search), changes what the model sees (outline-reads)
-// or sends it messages of its own (nudge, verify-done) is off until the config turns it on.
+// Anything that reaches outside the machine (search) or changes what the model sees (outline-reads) is
+// off until the config turns it on. nudge and verify-done are on: they only add a message when a run
+// would otherwise end broken, and verify-done runs the project's own tests (turn it off, or set a
+// safe command, in a repo whose tests are slow or touch real services).
 export const DEFAULTS: Config = {
   turnTimer: { enabled: true },
   outlineReads: { enabled: false, maxChars: 20_000 },
   search: { backend: 'off', searxngUrl: 'http://127.0.0.1:8888', ollamaUrl: 'http://127.0.0.1:11434' },
-  nudge: { enabled: false, maxPerPrompt: 2 },
+  nudge: { enabled: true, maxPerPrompt: 2 },
   // An empty command means detect it from the project (package.json, go.mod, Cargo.toml, pytest, Makefile).
-  verifyDone: { enabled: false, command: '', maxRounds: 2, timeoutSeconds: 120 },
+  verifyDone: { enabled: true, command: '', maxRounds: 2, timeoutSeconds: 120 },
 };
 
 const BACKENDS: SearchBackend[] = ['off', 'searxng', 'ollama'];

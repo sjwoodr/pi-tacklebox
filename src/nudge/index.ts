@@ -10,7 +10,7 @@
  * agent_before_settle boundary rather than retrying the stream, because by the time a reply is known
  * to be broken its text has already been shown. At most nudge.maxPerPrompt (default 2) per prompt.
  *
- * Off by default; `"nudge": { "enabled": true }` in tacklebox.json turns it on.
+ * On by default; `"nudge": { "enabled": false }` in tacklebox.json turns it off.
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';

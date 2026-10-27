@@ -24,7 +24,7 @@ function load(extension: (pi: any) => void, config?: object) {
   return { events, tools };
 }
 
-test('with no tacklebox.json only the turn timer runs', () => {
+test('with no tacklebox.json the turn timer runs, and outlines and search stay off', () => {
   assert.ok(load(turnTimer).events.includes('agent_end'));
   assert.deepEqual(load(outlineReads).events, []);
   assert.deepEqual(load(search).tools, []);
