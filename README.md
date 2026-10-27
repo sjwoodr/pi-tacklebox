@@ -1,5 +1,10 @@
 # pi-think-budget
 
+> **Moved.** pi-think-budget is now part of [pi-tacklebox](https://github.com/sjwoodr/pi-tacklebox),
+> a bundle of pi extensions, and this repository is archived. Install pi-tacklebox instead, and remove
+> `git:https://github.com/sjwoodr/pi-think-budget` from your pi settings so it doesn't load twice.
+> Its configuration file (`~/.pi/agent/think-budget.json`) is unchanged.
+
 Thinking token budgets for [pi](https://pi.dev) on model servers that have none, such as Ollama.
 
 pi's `thinkingBudgets` setting only works where the server enforces a cap (vLLM, llama.cpp).
