@@ -11,6 +11,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | search | `web_search` and `web_fetch` tools, through a SearXNG instance or Ollama's web search, with prompt guidance that includes today's date | off |
 | nudge | When a run is about to end on a reply that can't be what the model meant (a tool call written out as text, an empty reply, or "let me update `x.ts`:" with no call), sends one short message saying what went wrong and asks for one more request; at most `maxPerPrompt` per prompt | on |
 | verify-done | When a run that edited files is about to end, runs the project's tests; if they fail, sends the model the end of the output and one more request, up to `maxRounds`. Tests are also run before the first edit, and a suite that already failed isn't blamed on the change | on |
+| jobs | `job_start`, `job_status` and `job_kill` tools: a long command (watching a deploy or CI run, a build, a dev server) runs in the background, and its exit code and last lines reach the model as a message when it ends, starting a turn if pi is idle. A bash call that would block for minutes (`gh run watch`, `kubectl rollout status`, `tail -f`, a polling loop, a long `sleep`) is refused with a pointer to `job_start` | on |
 
 ## Install
 
@@ -39,7 +40,8 @@ and no file means the defaults below. A misspelt setting is an error at startup,
     "ollamaUrl": "http://127.0.0.1:11434"
   },
   "nudge": { "enabled": true, "maxPerPrompt": 2 },
-  "verifyDone": { "enabled": true, "command": "", "maxRounds": 2, "timeoutSeconds": 120 }
+  "verifyDone": { "enabled": true, "command": "", "maxRounds": 2, "timeoutSeconds": 120 },
+  "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 }
 }
 ```
 
@@ -55,6 +57,10 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   `package.json`, `cargo test`, `go test ./...`, pytest, or a Makefile's `test` target). A run
   is killed after `timeoutSeconds`. It can't catch a change that passes the tests but isn't what
   was asked.
+- `jobs`: output goes to a log file under the system temp dir; jobs still running are killed when
+  pi exits. `blockLong: false` lets blocking bash calls through. In print mode (`pi -p`), a run
+  that would end with a job still running waits up to `waitSeconds` for it, then carries on with
+  the result, so it isn't lost when pi exits.
 
 think-budget's rules go in a `thinkBudget` section of the same file, or, without one, in the older
 `think-budget.json`: see [docs/think-budget.md](docs/think-budget.md).

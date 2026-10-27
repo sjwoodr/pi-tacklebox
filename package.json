@@ -1,7 +1,7 @@
 {
   "name": "pi-tacklebox",
   "version": "0.1.0",
-  "description": "A box of pi extensions for running local models: thinking budgets, a turn timer, outlines for big files, web search, and checks that keep an agent from stopping early.",
+  "description": "A box of pi extensions for running local models: thinking budgets, a turn timer, outlines for big files, web search, background jobs, and checks that keep an agent from stopping early.",
   "type": "module",
   "license": "MIT",
   "author": "Steve Woodruff",
@@ -23,7 +23,8 @@
       "./src/outline-reads/index.ts",
       "./src/search/index.ts",
       "./src/nudge/index.ts",
-      "./src/verify-done/index.ts"
+      "./src/verify-done/index.ts",
+      "./src/jobs/index.ts"
     ]
   },
   "files": [
