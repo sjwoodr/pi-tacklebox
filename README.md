@@ -12,6 +12,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | nudge | When a run is about to end on a reply that can't be what the model meant (a tool call written out as text, an empty reply, or "let me update `x.ts`:" with no call), sends one short message saying what went wrong and asks for one more request; at most `maxPerPrompt` per prompt | on |
 | verify-done | When a run that edited files is about to end, runs the project's tests; if they fail, sends the model the end of the output and one more request, up to `maxRounds`. Tests are also run before the first edit, and a suite that already failed isn't blamed on the change | on |
 | jobs | `job_start`, `job_status` and `job_kill` tools: a long command (watching a deploy or CI run, a build, a dev server) runs in the background, and its exit code and last lines reach the model as a message when it ends, starting a turn if pi is idle. A bash call that would block for minutes (`gh run watch`, `kubectl rollout status`, `tail -f`, a polling loop, a long `sleep`) is refused with a pointer to `job_start` | on |
+| bang | `!command` gets an answer straight away: the model reads the output and responds, with no need to send another message. `!!command` stays private | on |
 
 ## Install
 
@@ -41,7 +42,8 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   },
   "nudge": { "enabled": true, "maxPerPrompt": 2 },
   "verifyDone": { "enabled": true, "command": "", "maxRounds": 2, "timeoutSeconds": 120 },
-  "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 }
+  "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 },
+  "bang": { "enabled": true }
 }
 ```
 
@@ -61,6 +63,9 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   pi exits. `blockLong: false` lets blocking bash calls through. In print mode (`pi -p`), a run
   that would end with a job still running waits up to `waitSeconds` for it, then carries on with
   the result, so it isn't lost when pi exits.
+- `bang`: every `!` becomes a model call, so use `!!` for commands that don't need an answer, or set
+  `enabled` to `false` to get pi's own behavior back. A `!` run while the model is busy waits for your
+  next message, as it does without this.
 
 think-budget's rules go in a `thinkBudget` section of the same file, or, without one, in the older
 `think-budget.json`: see [docs/think-budget.md](docs/think-budget.md).

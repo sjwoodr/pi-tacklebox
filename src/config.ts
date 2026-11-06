@@ -14,6 +14,7 @@ export interface Config {
   nudge: { enabled: boolean; maxPerPrompt: number };
   verifyDone: { enabled: boolean; command: string; maxRounds: number; timeoutSeconds: number };
   jobs: { enabled: boolean; blockLong: boolean; waitSeconds: number };
+  bang: { enabled: boolean };
   /** think-budget's rules (see src/think-budget/cap.ts); absent means think-budget.json is read instead. */
   thinkBudget?: { rules: unknown[] };
 }
@@ -32,6 +33,8 @@ export const DEFAULTS: Config = {
   verifyDone: { enabled: true, command: '', maxRounds: 2, timeoutSeconds: 120 },
   // Long commands run in the background; bash calls that would block for minutes are refused (jobs/long.ts).
   jobs: { enabled: true, blockLong: true, waitSeconds: 900 },
+  // On: `!` answers at once, at the price of a model call; `!!` still just runs the command.
+  bang: { enabled: true },
 };
 
 const BACKENDS: SearchBackend[] = ['off', 'searxng', 'ollama'];
