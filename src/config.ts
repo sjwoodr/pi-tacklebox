@@ -15,6 +15,7 @@ export interface Config {
   verifyDone: { enabled: boolean; command: string; maxRounds: number; timeoutSeconds: number };
   jobs: { enabled: boolean; blockLong: boolean; waitSeconds: number };
   bang: { enabled: boolean };
+  sessionSearch: { enabled: boolean; allowNonLocal: boolean };
   /** think-budget's rules (see src/think-budget/cap.ts); absent means think-budget.json is read instead. */
   thinkBudget?: { rules: unknown[] };
 }
@@ -35,6 +36,8 @@ export const DEFAULTS: Config = {
   jobs: { enabled: true, blockLong: true, waitSeconds: 900 },
   // On: `!` answers at once, at the price of a model call; `!!` still just runs the command.
   bang: { enabled: true },
+  // On: reads past sessions from disk, and refuses a model that isn't local since results can hold private work.
+  sessionSearch: { enabled: true, allowNonLocal: false },
 };
 
 const BACKENDS: SearchBackend[] = ['off', 'searxng', 'ollama'];

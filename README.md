@@ -13,6 +13,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | verify-done | When a run that edited files is about to end, runs the project's tests; if they fail, sends the model the end of the output and one more request, up to `maxRounds`. Tests are also run before the first edit, and a suite that already failed isn't blamed on the change | on |
 | jobs | `job_start`, `job_status` and `job_kill` tools: a long command (watching a deploy or CI run, a build, a dev server) runs in the background, and its exit code and last lines reach the model as a message when it ends, starting a turn if pi is idle. A bash call that would block for minutes (`gh run watch`, `kubectl rollout status`, `tail -f`, a polling loop, a long `sleep`) is refused with a pointer to `job_start` | on |
 | bang | `!command` gets an answer straight away: the model reads the output and responds, with no need to send another message. `!!command` stays private | on |
+| session-search | `session_search` tool and `/recall <regex>` command: search past pi sessions for what you said and the commands that ran, newest first. Tool output, thinking, replies and `!!` commands are never searched or shown. Refuses to run on a model that isn't local (cloud models behind local Ollama count as remote), unless `allowNonLocal` is set | on |
 
 ## Install
 
@@ -43,7 +44,8 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   "nudge": { "enabled": true, "maxPerPrompt": 2 },
   "verifyDone": { "enabled": true, "command": "", "maxRounds": 2, "timeoutSeconds": 120 },
   "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 },
-  "bang": { "enabled": true }
+  "bang": { "enabled": true },
+  "sessionSearch": { "enabled": true, "allowNonLocal": false }
 }
 ```
 

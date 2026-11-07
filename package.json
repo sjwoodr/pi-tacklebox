@@ -25,7 +25,8 @@
       "./src/nudge/index.ts",
       "./src/verify-done/index.ts",
       "./src/jobs/index.ts",
-      "./src/bang/index.ts"
+      "./src/bang/index.ts",
+      "./src/session-search/index.ts"
     ]
   },
   "files": [
