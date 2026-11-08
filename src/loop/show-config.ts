@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
+import { getAgentDir } from '../config.ts';
 import { CONFIG, defaults, type LoopConfig } from './settings.ts';
 
 /** The words `/loop` treats as subcommands, but only when the word is the whole argument. */

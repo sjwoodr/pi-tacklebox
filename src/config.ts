@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 /** tacklebox.json in pi's agent directory. think-budget keeps its own file (think-budget.json). */
 export const CONFIG = 'tacklebox.json';
@@ -120,6 +120,16 @@ function assign(target: Record<string, unknown>, given: unknown, path: string) {
     if (Array.isArray(value) && value.some((v) => typeof v !== 'string')) throw new Error(`"${where}" should be a list of strings`);
     target[key] = value;
   }
+}
+
+/**
+ * pi's agent directory, found the way pi's getAgentDir does (PI_CODING_AGENT_DIR, else ~/.pi/agent) but without
+ * importing pi: an installed package has no node_modules, so the loop's CLI loads this file with plain node.
+ */
+export function getAgentDir(): string {
+  const env = process.env.PI_CODING_AGENT_DIR;
+  if (env) return env === '~' ? homedir() : env.startsWith('~/') ? join(homedir(), env.slice(2)) : env;
+  return join(homedir(), '.pi', 'agent');
 }
 
 /** The config from pi's agent directory; no file means the defaults. Each extension reads it at load. */

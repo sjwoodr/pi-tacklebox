@@ -126,3 +126,11 @@ test('the extension registers nothing until tacklebox.json turns the loop on', a
   assert.deepEqual(load({ loop: { enabled: false } }), []);
   assert.deepEqual(load({ loop: { enabled: true } }), ['loop', 'loop-status', 'loop-stop']);
 });
+
+test('the CLI runs with plain node from a copy with no node_modules, as pi installs packages', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tacklebox-installed-'));
+  const repo = join(import.meta.dirname, '..', '..');
+  execFileSync('cp', ['-r', join(repo, 'src'), join(repo, 'package.json'), dir]);
+  const out = execFileSync(process.execPath, [join(dir, 'src', 'loop', 'cli.ts'), '--help'], { cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: dir } }).toString();
+  assert.match(out, /pi-loop \[options\] <task>/);
+});

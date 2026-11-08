@@ -3,8 +3,7 @@
  * run's /loop options on top, and where its sessions go.
  */
 import { join } from 'node:path';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import { CONFIG, DEFAULTS, type LoopRole, type LoopSettings, loadConfig } from '../config.ts';
+import { CONFIG, DEFAULTS, getAgentDir, type LoopRole, type LoopSettings, loadConfig } from '../config.ts';
 
 export interface StepLimits {
   maxTurns: number;
