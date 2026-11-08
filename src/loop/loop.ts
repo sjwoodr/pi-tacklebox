@@ -55,6 +55,8 @@ export interface StepRecord extends Speeds {
   gates?: GateResult[];
   /** The step was warned before its limit. */
   warned?: boolean;
+  /** It ignored the firm steer at its limit too and was aborted. */
+  aborted?: boolean;
   /** Times pi didn't start its session in time (the step was retried after the first). */
   startupStalls?: number;
 }
@@ -145,7 +147,7 @@ export async function runLoop(o: LoopOptions): Promise<LoopReport> {
     }
     const record: StepRecord = {
       n, round, role, kind, name, model: rc.model, turns: main.turns, ms: main.ms, stoppedBy: main.stoppedBy, wrappedUp: main.asks > 0,
-      warned: main.warned, startupStalls, sessionId: main.sessionId, exitCode: main.exitCode, text: main.text,
+      warned: main.warned, aborted: main.aborted, startupStalls, sessionId: main.sessionId, exitCode: main.exitCode, text: main.text,
       readTokens: main.readTokens, readMs: main.readMs, writeTokens: main.writeTokens, writeMs: main.writeMs,
     };
     if (role === 'reviewer') record.verdict = parseVerdict(record.text);
@@ -247,7 +249,7 @@ export function renderReport(r: LoopReport, cfg: LoopConfig): string {
   lines.push(`Implementer \`${cfg.implementer.model}\`, reviewer \`${cfg.reviewer.model}\`.`, '');
   lines.push('| step | what | turns | time | read | write | limit | session |', '|---|---|---|---|---|---|---|---|');
   for (const s of r.steps) {
-    const limit = [s.warned ? 'warned' : '', s.stoppedBy ? `${s.stoppedBy}${s.wrappedUp ? ', wrapped up' : ''}` : (s.wrappedUp ? 'asked again' : ''), s.startupStalls ? `${s.startupStalls} startup stall${s.startupStalls > 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
+    const limit = [s.warned ? 'warned' : '', s.stoppedBy ? `${s.stoppedBy} limit${s.aborted ? ', aborted' : ''}${s.wrappedUp ? ', asked again' : ''}` : (s.wrappedUp ? 'asked again' : ''), s.startupStalls ? `${s.startupStalls} startup stall${s.startupStalls > 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
     const v = s.verdict ? ` → ${s.verdict.verdict} (${s.verdict.counts.critical}c/${s.verdict.counts.high}h/${s.verdict.counts.minor}m)` : '';
     const g = !s.gates ? '' : !s.gates.length ? ' → no checks' : ` → checks ${s.gates.every((x) => x.ok) ? 'ok' : 'FAILED'}`;
     lines.push(`| ${s.n} | ${stepLabel(s.kind, s.round)} (${shortModel(s.model)})${v}${g} | ${s.turns} | ${min(s.ms)} | ${perSec(s.readTokens, s.readMs)} | ${perSec(s.writeTokens, s.writeMs)} | ${limit} | ${s.sessionId?.slice(-12) ?? ''} |`);

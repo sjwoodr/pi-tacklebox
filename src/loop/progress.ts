@@ -12,7 +12,7 @@ export function describeEvent(e: LoopEvent): string | undefined {
       return `step ${e.step.n}: ${stepLabel(e.step.kind, e.step.round)} (${shortModel(e.step.model)})…`;
     case 'step-end': {
       const s = e.step;
-      const limit = s.stoppedBy ? ` · stopped by ${s.stoppedBy}${s.wrappedUp ? ', wrapped up' : ''}` : '';
+      const limit = s.stoppedBy ? ` · ${s.stoppedBy} limit${s.aborted ? ', aborted' : ', finished after the firm steer'}${s.wrappedUp ? ', asked again' : ''}` : s.warned ? ' · warned' : '';
       const v = s.verdict ? ` · VERDICT ${s.verdict.verdict} (${s.verdict.counts.critical} critical, ${s.verdict.counts.high} high, ${s.verdict.counts.minor} minor)` : '';
       return `step ${s.n} done: ${stepLabel(s.kind, s.round)} · ${s.turns} turns · ${min(s.ms)} · read ${rate(s.readTokens, s.readMs)} · write ${rate(s.writeTokens, s.writeMs)}${limit}${v}`;
     }

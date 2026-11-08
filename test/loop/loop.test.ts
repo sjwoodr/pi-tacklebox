@@ -67,7 +67,8 @@ test('a reviewer that ignores the warning is aborted at its turn limit and asked
   assert.equal(r.outcome, 'passed');
   const rev = calls(log).filter((c) => c.role === 'reviewer');
   assert.equal(rev.filter((c) => c.cmd === 'start').length, 1, 'one reviewer process: no resume');
-  assert.deepEqual(rev.filter((c) => c.cmd !== 'start').map((c) => c.cmd), ['get_state', 'prompt', 'steer', 'abort', 'prompt']);
+  assert.deepEqual(rev.filter((c) => c.cmd !== 'start').map((c) => c.cmd), ['get_state', 'prompt', 'steer', 'steer', 'abort', 'prompt']);
+  assert.ok(review.aborted);
 });
 
 test('a reviewer that heeds the warning finishes on its own with its verdict', async () => {

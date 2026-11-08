@@ -21,6 +21,8 @@ interface Behavior {
   texts?: string[];
   steeredText?: string;
   ignoreSteer?: boolean;
+  /** Ignore this many steers, then obey the next one. */
+  ignoreSteers?: number;
   writeFile?: string;
   spawnSleeper?: string;
   hangOnClose?: boolean;
@@ -60,7 +62,7 @@ mkdirSync(sessionDir, { recursive: true });
 const id = `fake${Math.random().toString(16).slice(2, 10)}`;
 writeFileSync(join(sessionDir, `2026-01-01T00-00-00-000Z_${id}.jsonl`), '');
 
-let steer = false;
+let steers = 0;
 let abort = false;
 let running: Promise<void> | undefined;
 let prompts = 0;
@@ -80,7 +82,7 @@ async function mainRun() {
   const texts = b.texts ?? ['done'];
   const max = b.turns === 'forever' ? Infinity : b.turns;
   for (let i = 1; i <= max && !abort; i++) {
-    if (steer && !b.ignoreSteer) {
+    if (steers > (b.ignoreSteers ?? (b.ignoreSteer ? Infinity : 0))) {
       await turn(b.steeredText ?? texts[Math.min(call, texts.length - 1)], b.delayMs ?? 2);
       break;
     }
@@ -121,7 +123,7 @@ process.stdin.on('data', (chunk) => {
         running = prompts === 1 ? mainRun() : askRun();
         break;
       case 'steer':
-        steer = true;
+        steers++;
         respond({ disposition: 'queued' });
         break;
       case 'abort':

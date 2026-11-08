@@ -9,11 +9,12 @@ implement → checks → review (on a throwaway copy) → clean? stop : fix → 
 
 - **Limits on every step**, enforced from outside through pi's RPC mode, gentlest first. A few turns (or
   minutes) before a limit the step is **warned** (a steer message: stop and write the report), so a model
-  that listens finishes on its own. At the limit the run is **aborted** and asked once for its report in
-  the same process, so the conversation and the model server's prompt cache stay warm. Only a pi that is
-  stuck is **killed**, with its whole process group. A pi that doesn't answer at start is killed and
-  retried once. Killing a step mid-request was the first design: LM Studio went on reading the dead
-  request's prompt for minutes, since it only notices a closed connection when it sends a token.
+  that listens finishes on its own. At the limit it gets a **firm steer** (the final ask), which rides on the
+  request pi sends anyway. Only a model that ignores both is **aborted**, 3 turns or 2 minutes later, and asked
+  once for its report in the same process, so the conversation and the model server's prompt cache stay warm.
+  Only a pi that is stuck is **killed**, with its whole process group. A pi that doesn't answer at start is killed and
+  retried once. Killing or aborting a step mid-request leaves LM Studio reading the dead request's prompt
+  for minutes (it only notices a closed connection when it sends a token), so steers come first.
 - **Checks run by the loop**, not the model: `npm test` and `npm run check` by default after every
   implementer step. A failure goes straight back to the implementer, without spending a review.
 - **The reviewer can't touch the real code**: it reviews a detached git worktree with the uncommitted work

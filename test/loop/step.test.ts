@@ -37,22 +37,38 @@ test('near the turn limit the step is warned, and a model that listens finishes 
   assert.ok(cmds.includes('steer') && !cmds.includes('abort'), cmds.join(','));
 });
 
-test('a model that ignores the warning is aborted at the limit, then asked for its report in the same process', async () => {
-  const { dir, log } = fakePi({ implementer: { turns: 'forever', delayMs: 4, ignoreSteer: true }, wrapUp: { text: 'late report' } });
+test('ignoring the warning brings a firm steer at the limit; a model that obeys it finishes with no abort', async () => {
+  const { dir, log } = fakePi({ implementer: { turns: 'forever', delayMs: 4, ignoreSteers: 1, steeredText: 'report at the limit' } });
   const r = await runStep(base(dir, { limits: { maxTurns: 6, maxMinutes: 1 } }));
   assert.equal(r.stoppedBy, 'turns');
+  assert.equal(r.aborted, false);
+  assert.equal(r.text, 'report at the limit');
+  assert.equal(r.asks, 0);
+  assert.deepEqual(commands(log).map((c) => c.cmd), ['get_state', 'prompt', 'steer', 'steer']);
+  assert.equal(commands(log)[3].message, 'FINAL ASK', 'the firm steer is the final ask');
+  // The steer lands in the request after the one already under way, so up to 2 turns past the limit.
+  assert.ok(r.turns <= 8, `finished within 2 turns of the limit and before the abort at 9, at ${r.turns}`);
+});
+
+test('a model that ignores both steers is aborted after the grace turns, then asked in the same process', async () => {
+  const { dir, log } = fakePi({ implementer: { turns: 'forever', delayMs: 4, ignoreSteer: true }, wrapUp: { text: 'late report' } });
+  const r = await runStep(base(dir, { limits: { maxTurns: 6, maxMinutes: 1 }, graceTurns: 3 }));
+  assert.equal(r.stoppedBy, 'turns');
+  assert.equal(r.aborted, true);
   assert.equal(r.text, 'late report');
   assert.equal(r.asks, 1);
-  assert.deepEqual(commands(log).map((c) => c.cmd), ['get_state', 'prompt', 'steer', 'abort', 'prompt']);
+  assert.ok(r.turns >= 9, `aborted only after the grace turns, at ${r.turns}`);
+  assert.deepEqual(commands(log).map((c) => c.cmd), ['get_state', 'prompt', 'steer', 'steer', 'abort', 'prompt']);
   assert.equal(commands(log).at(-1).message, 'FINAL ASK');
   assert.equal(JSON.parse(readFileSync(log, 'utf8').split('\n')[0]).cmd, 'start');
   assert.equal(readFileSync(log, 'utf8').split('\n').filter((l) => l.includes('"cmd":"start"')).length, 1, 'one pi process, no resume');
 });
 
-test('the time limit warns, then aborts and asks', async () => {
+test('the time limit warns, steers firmly, then aborts and asks', async () => {
   const { dir, log } = fakePi({ implementer: { turns: 'forever', delayMs: 100, ignoreSteer: true }, wrapUp: { text: 'timed report' } });
-  const r = await runStep(base(dir, { limits: { maxTurns: 1000, maxMinutes: 0.02 }, warnMinutes: 0.01 }));
+  const r = await runStep(base(dir, { limits: { maxTurns: 1000, maxMinutes: 0.02 }, warnMinutes: 0.01, graceMinutes: 0.01 }));
   assert.equal(r.stoppedBy, 'time');
+  assert.equal(r.aborted, true);
   assert.equal(r.warned, true);
   assert.equal(r.text, 'timed report');
   assert.ok(commands(log).some((c) => c.cmd === 'abort'));

@@ -5,9 +5,10 @@
  *   1. warn:  a few turns (or minutes) before a limit, a `steer` message tells the model to stop and write its
  *             report. pi delivers it before the next model request, so a model that listens finishes on its
  *             own: nothing is killed, and no half-sent request is left running on the model server.
- *   2. abort: at the limit, `abort` stops the run (pi stays up), then one more `prompt` asks for the report in
- *             the same process, with the conversation and the server's prompt cache still warm.
- *   3. kill:  only if pi itself is stuck (no answer at start, or past the hard deadline), its whole process
+ *   2. limit: at the limit, a firm steer (the final ask), which rides on the request pi sends anyway.
+ *   3. abort: a few turns (or minutes) later, only for a model that ignored both: `abort` stops the run (pi stays
+ *             up), then one more `prompt` asks for the report in the same process, cache still warm.
+ *   4. kill:  only if pi itself is stuck (no answer at start, or past the hard deadline), its whole process
  *             group is killed, so a running `npm test` goes too.
  *
  * Killing mid-request was the old way, and it left LM Studio reading a dead request's prompt for minutes
@@ -44,8 +45,11 @@ export interface StepOptions {
   warnMinutes?: number;
   /** The warning sent as a steer message. */
   warning?: string;
-  /** Asked after an abort at a limit: the report, in the same process. */
+  /** Sent as a steer at the limit, and asked again after an abort: the report, in the same process. */
   finalAsk?: string;
+  /** After the limit, turns (default 3) or minutes (default 2) before an abort: the model's chance to obey the firm steer. */
+  graceTurns?: number;
+  graceMinutes?: number;
   /** Time allowed for each ask after the run (default 6 minutes). */
   askMinutes?: number;
   /**
@@ -76,10 +80,12 @@ export interface StepResult extends Speeds {
   text: string;
   turns: number;
   ms: number;
-  /** The limit that was reached and enforced by abort (turns/time), or why the process was killed. */
+  /** The limit that was reached (turns/time), or why the step was stopped otherwise. */
   stoppedBy?: 'turns' | 'time' | 'aborted' | 'startup' | 'stuck';
   /** The step was warned before its limit. */
   warned: boolean;
+  /** It ignored the firm steer at its limit too, and its run was aborted. */
+  aborted: boolean;
   /** Prompts sent after the main one (the final ask, a follow-up). */
   asks: number;
   exitCode: number | null;
@@ -119,8 +125,10 @@ export function runStep(o: StepOptions): Promise<StepResult> {
   // total budget) must not be told to wrap up as soon as it starts.
   const warnMs = Math.max(o.limits.maxMinutes - (o.warnMinutes ?? 2), o.limits.maxMinutes * 0.75) * 60_000;
   const askMs = (o.askMinutes ?? 6) * 60_000;
+  const graceTurns = o.graceTurns ?? 3;
+  const graceMs = (o.graceMinutes ?? 2) * 60_000;
   const result: StepResult = {
-    text: '', turns: 0, ms: 0, warned: false, asks: 0, exitCode: null, input: 0, output: 0, cacheRead: 0,
+    text: '', turns: 0, ms: 0, warned: false, aborted: false, asks: 0, exitCode: null, input: 0, output: 0, cacheRead: 0,
     stderrTail: '', readTokens: 0, readMs: 0, writeTokens: 0, writeMs: 0,
   };
 
@@ -134,7 +142,8 @@ export function runStep(o: StepOptions): Promise<StepResult> {
     let firstOutput = 0;
     let tool: string | undefined;
     let answered = false; // pi has said anything at all
-    let limitHit = false; // a limit was enforced by abort
+    let limitHit = false; // a limit was reached and the firm steer sent
+    let abortSent = false;
     let finalAsked = false;
     let followedUp = false;
     let closing = false;
@@ -168,10 +177,22 @@ export function runStep(o: StepOptions): Promise<StepResult> {
       send({ type: 'steer', message: o.warning ?? DEFAULT_WARNING });
       progress();
     };
-    const enforce = (why: 'turns' | 'time') => {
+    // At the limit, a firm steer rides on the request pi sends anyway. Aborting there cancelled a request LM
+    // Studio had started reading, and it went on reading it (an orphan, at half speed for the next step).
+    const reachLimit = (why: 'turns' | 'time') => {
       if (limitHit || closing) return;
       limitHit = true;
       result.stoppedBy = why;
+      result.warned = true;
+      send({ type: 'steer', message: o.finalAsk ?? o.warning ?? DEFAULT_WARNING });
+      progress();
+      later(graceMs, abortRun);
+    };
+    /** Only for a model that ignored both steers: stop the run, then ask for the report in the same process. */
+    const abortRun = () => {
+      if (abortSent || closing) return;
+      abortSent = true;
+      result.aborted = true;
       send({ type: 'abort' });
       // The ask follows the abort's agent_settled; if pi never settles, it's stuck.
       later(askMs + 60_000, () => kill('stuck'));
@@ -186,7 +207,7 @@ export function runStep(o: StepOptions): Promise<StepResult> {
       if (!answered) kill('startup');
     });
     later(warnMs, warn);
-    later(o.limits.maxMinutes * 60_000, () => enforce('time'));
+    later(o.limits.maxMinutes * 60_000, () => reachLimit('time'));
     const onAbort = () => {
       result.stoppedBy = 'aborted';
       send({ type: 'abort' });
@@ -240,16 +261,17 @@ export function runStep(o: StepOptions): Promise<StepResult> {
           result.turns++;
           tool = undefined;
           progress();
-          if (finalAsked && result.turns >= o.limits.maxTurns + 3) kill('stuck'); // the final ask went on calling tools
-          else if (result.turns >= o.limits.maxTurns) enforce('turns');
+          if (finalAsked && result.turns >= o.limits.maxTurns + graceTurns + 3) kill('stuck'); // the final ask went on calling tools
+          else if (limitHit && result.turns >= o.limits.maxTurns + graceTurns) abortRun();
+          else if (result.turns >= o.limits.maxTurns) reachLimit('turns');
           else if (result.turns >= o.limits.maxTurns - warnTurns) warn();
           break;
         case 'agent_settled':
           if (closing) break;
-          if (limitHit && !finalAsked && o.finalAsk) {
+          if (abortSent && !finalAsked && o.finalAsk) {
             finalAsked = true;
             ask(o.finalAsk);
-          } else if (!limitHit && !finalAsked && !followedUp && o.followUpFor?.(result.text)) {
+          } else if (!abortSent && !finalAsked && !followedUp && o.followUpFor?.(result.text)) {
             followedUp = true;
             ask(o.followUpFor(result.text)!);
           } else {
