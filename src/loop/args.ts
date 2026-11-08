@@ -5,7 +5,8 @@ export const USAGE = `/loop [options] <task>
   --minutes N         total time budget for the whole loop
   --implementer M     implementer model pattern, e.g. ollama/beam:cloud:medium
   --reviewer M        reviewer model pattern, e.g. lmstudio/qwen/qwen3.8-27b:off
-  --no-gates          skip the loop's own test and type-check runs`;
+  --no-gates          skip the loop's own test and type-check runs
+  --workflow NAME     run a named workflow (review-loop, review, or one from tacklebox.json)`;
 
 /** Leading --options, then the task (the rest, verbatim). Shared by /loop and the pi-loop CLI. */
 export function parseArgs(input: string): { overrides: Partial<LoopConfig>; task: string } {
@@ -32,6 +33,7 @@ export function parseArgs(input: string): { overrides: Partial<LoopConfig>; task
       case '--implementer': overrides.implementer = { model: take() } as LoopConfig['implementer']; break;
       case '--reviewer': overrides.reviewer = { model: take() } as LoopConfig['reviewer']; break;
       case '--no-gates': overrides.gates = []; break;
+      case '--workflow': overrides.workflow = take(); break;
       case '--': return { overrides, task: rest.trim() };
       default: throw new Error(`unknown option ${m[1]}\n${USAGE}`);
     }

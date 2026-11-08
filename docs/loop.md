@@ -60,3 +60,48 @@ Off by default. In `tacklebox.json`, the models are required; everything else ha
 Model patterns take pi's thinking suffix, `provider/model:level`; pi splits at the last colon, so
 `ollama/beam:cloud:medium` works. `tools: []` means pi's defaults. Give the implementer a model that edits
 reliably and the reviewer one that reads carefully; a fast model that loops on edits won't get far.
+
+## Workflows
+
+The loop above is the built-in workflow `review-loop`. A workflow is a list of nodes run by code; `/loop`
+runs `loop.workflow` (default `review-loop`), and `/loop --workflow NAME <task>` runs another. `/loop workflows`
+lists them. Built in: `review-loop`, and `review` (review the uncommitted work already in the repo, on a copy,
+and stop at the verdict).
+
+```json
+"loop": {
+  "workflows": {
+    "two-tries": {
+      "description": "Two models try the task side by side; the main model compares the patches",
+      "nodes": [
+        { "id": "a", "agent": "implementer", "workspace": "own", "prompt": "{task}" },
+        { "id": "b", "agent": "lmstudio/qwen/qwen3.8-27b:off", "workspace": "own", "prompt": "{task}", "after": [] },
+        { "id": "pick", "agent": "main", "role": "helper", "after": ["a", "b"],
+          "prompt": "Two attempts at this task: {task}\nA: {a.patch}\nB: {b.patch}\nRead both patches and say which is better and why." }
+      ]
+    }
+  }
+}
+```
+
+- **Nodes:** `agent` (a step), `checks` (commands the code runs) or `repeat` (rounds of a body list).
+- **Order:** a node runs after the node listed before it, unless `after` names others (earlier nodes in the
+  same list only) or is `[]`. Nodes whose dependencies are done run in parallel; a stop anywhere keeps later
+  nodes from starting.
+- **`agent`:** `implementer` and `reviewer` (the models above), `main` (the conversation's model, inside pi),
+  or any pi model pattern. `role` (`implementer`, `reviewer`, `helper`) picks the instructions; by default
+  the reviewer gets the reviewer's, the implementer the implementer's, anything else a helper's.
+- **`workspace`:** `repo` (the real repo; default), `copy` (a throwaway copy: default for reviewers), `own` (a
+  private copy whose changes are kept as a patch for later steps, `{id.patch}`; the repo is left alone).
+- **Prompts:** `{task}`, `{round}`, `{again}` (a note for later review rounds), `{id}` (a step's last output),
+  `{id.patch}`.
+- **Steps that must deliver:** `verdict: true` (default for reviewers) means a VERDICT line is required: none,
+  even when asked again, stops the run; a clean one ends the surrounding `repeat`. `progress: true` means the
+  step must change the repo, or the run stops with "no progress".
+- **`checks`:** `"gates"` (the configured commands) or a list; `onFail: { "fix": "<agent node>", "times": N }`
+  sends failures back to that step.
+- **`repeat`:** `{ "id", "repeat": [...], "until": "clean", "max": N }` (default `maxRounds`).
+
+Every agent step gets the same limits, steers, sessions and speeds as the loop. A workflow in tacklebox.json is
+checked when the loop loads, and a mistake is named (`loop.workflows.two-tries: "b": after "x", which isn't an
+earlier node in the same list`).

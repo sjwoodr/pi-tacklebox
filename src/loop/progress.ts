@@ -1,4 +1,4 @@
-import { type LoopEvent, shortModel, stepLabel } from './loop.ts';
+import { type LoopEvent, shortModel } from './report.ts';
 
 const min = (ms: number) => `${(ms / 60_000).toFixed(1)} min`;
 const rate = (tokens: number, ms: number) => (ms > 0 && tokens > 0 ? `${Math.round((tokens * 1000) / ms)}/s` : '-');
@@ -7,14 +7,14 @@ const rate = (tokens: number, ms: number) => (ms > 0 && tokens > 0 ? `${Math.rou
 export function describeEvent(e: LoopEvent): string | undefined {
   switch (e.kind) {
     case 'start':
-      return `pi-loop ${e.runId}: sessions in ${e.sessionDir}`;
+      return `pi-loop ${e.runId} (${e.workflow}): sessions in ${e.sessionDir}`;
     case 'step-start':
-      return `step ${e.step.n}: ${stepLabel(e.step.kind, e.step.round)} (${shortModel(e.step.model)})…`;
+      return `step ${e.step.n}: ${e.step.label} (${shortModel(e.step.model)})…`;
     case 'step-end': {
       const s = e.step;
       const limit = s.stoppedBy ? ` · ${s.stoppedBy} limit${s.aborted ? ', aborted' : ', finished after the firm steer'}${s.wrappedUp ? ', asked again' : ''}` : s.warned ? ' · warned' : '';
       const v = s.verdict ? ` · VERDICT ${s.verdict.verdict} (${s.verdict.counts.critical} critical, ${s.verdict.counts.high} high, ${s.verdict.counts.minor} minor)` : '';
-      return `step ${s.n} done: ${stepLabel(s.kind, s.round)} · ${s.turns} turns · ${min(s.ms)} · read ${rate(s.readTokens, s.readMs)} · write ${rate(s.writeTokens, s.writeMs)}${limit}${v}`;
+      return `step ${s.n} done: ${s.label} · ${s.turns} turns · ${min(s.ms)} · read ${rate(s.readTokens, s.readMs)} · write ${rate(s.writeTokens, s.writeMs)}${limit}${v}`;
     }
     case 'gates':
       return `checks: ${e.results.map((g) => `${g.command} ${g.ok ? 'ok' : g.timedOut ? 'TIMED OUT' : 'FAILED'}`).join(', ') || 'none'}`;
@@ -28,5 +28,5 @@ export function describeEvent(e: LoopEvent): string | undefined {
 /** The live status for one running step: "step 3: review 1 · 12 turns · 4.2 min · bash". */
 export function describeProgress(e: Extract<LoopEvent, { kind: 'step-progress' }>): string {
   const p = e.progress;
-  return `step ${e.step.n}: ${stepLabel(e.step.kind, e.step.round)} · ${p.turns} turns · ${min(p.elapsedMs)}${p.warned ? ' · warned' : ''}${p.tool ? ` · ${p.tool}` : ''}`;
+  return `step ${e.step.n}: ${e.step.label} · ${p.turns} turns · ${min(p.elapsedMs)}${p.warned ? ' · warned' : ''}${p.tool ? ` · ${p.tool}` : ''}`;
 }

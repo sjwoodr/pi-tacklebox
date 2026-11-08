@@ -8,6 +8,7 @@ export const SUBCOMMANDS = {
   config: 'show the settings the next loop will use',
   status: 'show the running loop',
   stop: 'stop the running loop and its pi processes',
+  workflows: 'list the workflows /loop --workflow can run',
 } as const;
 export type Subcommand = keyof typeof SUBCOMMANDS;
 
@@ -34,6 +35,7 @@ export function describeConfig(config: LoopConfig, file = join(getAgentDir(), CO
     `loop settings (the "loop" section of ${existsSync(file) ? file : `${file}, not found: defaults`})`,
     ...role('implementer'),
     ...role('reviewer'),
+    `workflow: ${config.workflow}${mark(config.workflow !== d.workflow)} (/loop workflows lists them)`,
     `rounds: up to ${config.maxRounds}${mark(config.maxRounds !== d.maxRounds)}`,
     `total time: ${config.maxTotalMinutes} min${mark(config.maxTotalMinutes !== d.maxTotalMinutes)}`,
     `near a limit: warned 3 turns or 2 min before; at the limit: aborted, then asked once for the report (${config.wrapUpMinutes} min, same process)${mark(config.wrapUpMinutes !== d.wrapUpMinutes)}`,
@@ -43,4 +45,11 @@ export function describeConfig(config: LoopConfig, file = join(getAgentDir(), CO
     `sessions and reports: ${config.sessionsRoot}/<run>/`,
     `One run can override: /loop --rounds N --minutes N --implementer M --reviewer M --no-gates <task>`,
   ].join('\n');
+}
+
+/** The workflows /loop can run by name, with what each does; the default is marked. */
+export function describeWorkflows(all: Record<string, { description?: string }>, current: string, builtIn: string[]): string {
+  return Object.entries(all)
+    .map(([name, w]) => `${name === current ? '* ' : '  '}${name}${builtIn.includes(name) ? ' (built in)' : ''}: ${w.description ?? '(no description)'}`)
+    .join('\n');
 }

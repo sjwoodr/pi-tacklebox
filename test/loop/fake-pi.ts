@@ -26,6 +26,8 @@ interface Behavior {
   writeFile?: string;
   spawnSleeper?: string;
   hangOnClose?: boolean;
+  /** Answer with "OUT:" and the first line of the prompt, so tests can follow outputs between steps. */
+  echoPrompt?: boolean;
 }
 
 const args = process.argv.slice(2);
@@ -39,7 +41,7 @@ const role = promptFile && readFileSync(promptFile, 'utf8').includes('You are th
 const config = JSON.parse(readFileSync(process.env.FAKE_PI_CONFIG!, 'utf8'));
 const b: Behavior = config[role] ?? { turns: 1 };
 const log = (entry: Record<string, unknown>) => {
-  if (process.env.FAKE_PI_LOG) appendFileSync(process.env.FAKE_PI_LOG, JSON.stringify({ role, ...entry }) + '\n');
+  if (process.env.FAKE_PI_LOG) appendFileSync(process.env.FAKE_PI_LOG, JSON.stringify({ role, pid: process.pid, ts: Date.now(), ...entry }) + '\n');
 };
 const out = (e: unknown) => process.stdout.write(JSON.stringify(e) + '\n');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -66,6 +68,7 @@ let steers = 0;
 let abort = false;
 let running: Promise<void> | undefined;
 let prompts = 0;
+let firstPrompt = '';
 
 async function turn(text: string, delayMs: number) {
   out({ type: 'turn_start' });
@@ -79,7 +82,7 @@ async function turn(text: string, delayMs: number) {
 async function mainRun() {
   if (b.writeFile) appendFileSync(join(process.cwd(), b.writeFile), `call ${call}\n`);
   if (b.spawnSleeper) writeFileSync(b.spawnSleeper, String(spawn('sleep', ['60'], { stdio: 'ignore' }).pid));
-  const texts = b.texts ?? ['done'];
+  const texts = b.echoPrompt ? [`OUT:${firstPrompt.split('\n')[0]}`] : (b.texts ?? ['done']);
   const max = b.turns === 'forever' ? Infinity : b.turns;
   for (let i = 1; i <= max && !abort; i++) {
     if (steers > (b.ignoreSteers ?? (b.ignoreSteer ? Infinity : 0))) {
@@ -119,6 +122,7 @@ process.stdin.on('data', (chunk) => {
         break;
       case 'prompt':
         prompts++;
+        if (prompts === 1) firstPrompt = c.message ?? '';
         respond({ disposition: 'started' });
         running = prompts === 1 ? mainRun() : askRun();
         break;
@@ -136,5 +140,6 @@ process.stdin.on('data', (chunk) => {
 process.stdin.on('end', async () => {
   if (b.hangOnClose) return void (await sleep(600_000));
   await running;
+  log({ cmd: 'exit' });
   process.exit(0);
 });

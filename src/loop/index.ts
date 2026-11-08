@@ -10,9 +10,10 @@ import { basename } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { parseArgs, USAGE } from './args.ts';
 import { loopConfig, loopEnabled } from './settings.ts';
-import { type LoopEvent, type LoopReport, runLoop, stepLabel } from './loop.ts';
+import { type LoopEvent, type LoopReport, runLoop, workflows } from './loop.ts';
 import { describeEvent, describeProgress } from './progress.ts';
-import { describeConfig, SUBCOMMANDS, subcommandOf } from './show-config.ts';
+import { describeConfig, describeWorkflows, SUBCOMMANDS, subcommandOf } from './show-config.ts';
+import { BUILT_IN } from './workflow.ts';
 
 /** The command that started this pi, so steps run the same pi (as pi's subagent example does). */
 function piCommand(): string[] {
@@ -20,6 +21,12 @@ function piCommand(): string[] {
   if (script && existsSync(script)) return [process.execPath, script];
   const exec = basename(process.execPath).toLowerCase();
   return /^(node|bun)(\.exe)?$/.test(exec) ? ['pi'] : [process.execPath];
+}
+
+/** The conversation's model as a pi model pattern, for agent "main" in a workflow. */
+export function mainModelOf(ctx: ExtensionContext): string | undefined {
+  const m = ctx.model as { provider?: string; id?: string } | undefined;
+  return m?.provider && m.id ? `${m.provider}/${m.id}` : undefined;
 }
 
 interface LoopState {
@@ -78,6 +85,14 @@ export default function (pi: ExtensionAPI) {
       if (subcommand === 'config') return showConfig(ctx);
       if (subcommand === 'status') return status(ctx);
       if (subcommand === 'stop') return stop(ctx);
+      if (subcommand === 'workflows') {
+        try {
+          const config = loopConfig();
+          return ctx.ui.notify(describeWorkflows(workflows(config), config.workflow, Object.keys(BUILT_IN)), 'info');
+        } catch (err) {
+          return ctx.ui.notify(err instanceof Error ? err.message : String(err), 'error');
+        }
+      }
       if (running) {
         ctx.ui.notify('A loop is already running: /loop status, or /loop stop to stop it.', 'warning');
         return;
@@ -112,12 +127,12 @@ export default function (pi: ExtensionAPI) {
         } else {
           const line = describeEvent(e);
           if (line) state.log.push(line);
-          if (e.kind === 'step-start') state.status = `step ${e.step.n}: ${stepLabel(e.step.kind, e.step.round)}`;
+          if (e.kind === 'step-start') state.status = `step ${e.step.n}: ${e.step.label}`;
         }
         show();
       };
 
-      runLoop({ task: parsed.task, cwd: ctx.cwd, config, piCommand: piCommand(), signal: controller.signal, onEvent })
+      runLoop({ task: parsed.task, cwd: ctx.cwd, config, mainModel: mainModelOf(ctx), piCommand: piCommand(), signal: controller.signal, onEvent })
         .then((report: LoopReport) => {
           pi.sendMessage({ customType: 'pi-loop', content: report.markdown, display: true, details: { reportFile: report.reportFile, outcome: report.outcome } });
         })

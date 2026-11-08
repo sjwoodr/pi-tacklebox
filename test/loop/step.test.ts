@@ -10,7 +10,7 @@ const base = (dir: string, over: Partial<StepOptions> = {}): StepOptions => ({
   limits: { maxTurns: 10, maxMinutes: 1 }, sessionDir: join(dir, 'sessions'), piCommand: FAKE_PI,
   finalAsk: 'FINAL ASK', ...over,
 });
-const commands = (log: string) => readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((c) => c.cmd !== 'start');
+const commands = (log: string) => readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((c) => c.cmd !== 'start' && c.cmd !== 'exit');
 
 test('a step that finishes on its own: text, turns, session id, speeds; RPC flags and no warning', async () => {
   const { dir, log } = fakePi({ implementer: { turns: 3, texts: ['all done'] } });

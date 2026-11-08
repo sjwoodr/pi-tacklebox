@@ -125,6 +125,7 @@ test('the extension registers nothing until tacklebox.json turns the loop on', a
   assert.deepEqual(load(), []);
   assert.deepEqual(load({ loop: { enabled: false } }), []);
   assert.deepEqual(load({ loop: { enabled: true } }), ['loop', 'loop-status', 'loop-stop']);
+  assert.equal(subcommandOf('workflows'), 'workflows');
 });
 
 test('the CLI runs with plain node from a copy with no node_modules, as pi installs packages', () => {

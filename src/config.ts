@@ -30,6 +30,10 @@ export interface LoopSettings {
   gateRetries: number;
   /** A step whose pi doesn't answer in this many seconds is killed and retried once. */
   startupSeconds: number;
+  /** The workflow /loop runs by default: "review-loop", "review", or one named in workflows. */
+  workflow: string;
+  /** Named workflows (see docs/loop.md), checked when the loop loads them. */
+  workflows: Record<string, unknown>;
 }
 
 export interface Config {
@@ -76,6 +80,8 @@ export const DEFAULTS: Config = {
     gateTimeoutMinutes: 5,
     gateRetries: 1,
     startupSeconds: 60,
+    workflow: 'review-loop',
+    workflows: {},
   },
 };
 
@@ -112,6 +118,12 @@ function assign(target: Record<string, unknown>, given: unknown, path: string) {
   for (const [key, value] of Object.entries(given)) {
     const where = `${path}.${key}`;
     if (!(key in target)) throw new Error(`unknown setting "${where}"`);
+    if (where === 'loop.workflows') {
+      // Free-form: workflow names are the user's; the loop validates each workflow when it loads them.
+      if (!isPlainObject(value)) throw new Error(`"${where}" should be an object of named workflows`);
+      target[key] = value;
+      continue;
+    }
     if (isPlainObject(target[key])) {
       assign(target[key] as Record<string, unknown>, value, where);
       continue;

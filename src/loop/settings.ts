@@ -4,6 +4,7 @@
  */
 import { join } from 'node:path';
 import { CONFIG, DEFAULTS, getAgentDir, type LoopRole, type LoopSettings, loadConfig } from '../config.ts';
+import { validateWorkflow } from './workflow.ts';
 
 export interface StepLimits {
   maxTurns: number;
@@ -25,10 +26,15 @@ export function defaults(dir = getAgentDir()): LoopConfig {
   return { ...rest, sessionsRoot: join(dir, 'sessions', 'loop') };
 }
 
-/** tacklebox.json's loop section, then this run's options. Unknown options and wrong types are errors. */
+/** tacklebox.json's loop section, then this run's options. Unknown options, wrong types and broken workflows are errors. */
 export function loopConfig(overrides: Partial<LoopConfig> = {}, dir = getAgentDir()): LoopConfig {
   const { enabled: _, ...rest } = loadConfig(dir).loop;
-  return merge({ ...rest, sessionsRoot: join(dir, 'sessions', 'loop') }, overrides as Record<string, unknown>, 'options');
+  const config = merge({ ...rest, sessionsRoot: join(dir, 'sessions', 'loop') }, overrides as Record<string, unknown>, 'options');
+  for (const [name, w] of Object.entries(config.workflows)) {
+    const errors = validateWorkflow(w, { mainModel: true });
+    if (errors.length) throw new Error(`${CONFIG}: loop.workflows.${name}: ${errors.join('; ')}`);
+  }
+  return config;
 }
 
 export function loopEnabled(dir = getAgentDir()): boolean {
