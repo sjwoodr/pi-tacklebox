@@ -16,7 +16,7 @@ export function subcommandOf(args: string): Subcommand | undefined {
   return word in SUBCOMMANDS ? (word as Subcommand) : undefined;
 }
 
-/** The effective settings, marking the ones pi-loop.json changed from the defaults. */
+/** The effective settings, marking the ones tacklebox.json changed from the defaults. */
 export function describeConfig(config: LoopConfig, file = join(getAgentDir(), CONFIG)): string {
   const d = defaults();
   const mark = (changed: boolean) => (changed ? '  (set in file)' : '');

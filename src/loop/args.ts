@@ -1,7 +1,7 @@
 import type { LoopConfig } from './settings.ts';
 
 export const USAGE = `/loop [options] <task>
-  --rounds N          review rounds (default from pi-loop.json, else 3)
+  --rounds N          review rounds (default from the loop section of tacklebox.json, else 3)
   --minutes N         total time budget for the whole loop
   --implementer M     implementer model pattern, e.g. ollama/beam:cloud:medium
   --reviewer M        reviewer model pattern, e.g. lmstudio/qwen/qwen3.8-27b:off
