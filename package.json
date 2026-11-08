@@ -26,17 +26,22 @@
       "./src/verify-done/index.ts",
       "./src/jobs/index.ts",
       "./src/bang/index.ts",
-      "./src/session-search/index.ts"
+      "./src/session-search/index.ts",
+      "./src/loop/index.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "files": [
     "src",
     "docs",
+    "skills",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --test --test-timeout=60000 \"test/**/*.test.ts\"",
     "check": "tsc -p ."
   },
   "peerDependencies": {

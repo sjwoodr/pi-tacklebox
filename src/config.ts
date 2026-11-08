@@ -7,6 +7,31 @@ export const CONFIG = 'tacklebox.json';
 
 export type SearchBackend = 'off' | 'searxng' | 'ollama';
 
+/** One role in the loop: a pi model pattern (thinking level on the end) and its per-step limits. */
+export interface LoopRole {
+  model: string;
+  /** pi --tools allowlist; empty for pi's defaults. */
+  tools: string[];
+  maxTurns: number;
+  maxMinutes: number;
+}
+
+export interface LoopSettings {
+  enabled: boolean;
+  implementer: LoopRole;
+  reviewer: LoopRole;
+  /** Minutes for the ask after a step is aborted at a limit. */
+  wrapUpMinutes: number;
+  maxRounds: number;
+  maxTotalMinutes: number;
+  /** Commands the loop runs itself after every implementer step; empty to skip. */
+  gates: string[];
+  gateTimeoutMinutes: number;
+  gateRetries: number;
+  /** A step whose pi doesn't answer in this many seconds is killed and retried once. */
+  startupSeconds: number;
+}
+
 export interface Config {
   turnTimer: { enabled: boolean };
   outlineReads: { enabled: boolean; maxChars: number };
@@ -16,6 +41,7 @@ export interface Config {
   jobs: { enabled: boolean; blockLong: boolean; waitSeconds: number };
   bang: { enabled: boolean };
   sessionSearch: { enabled: boolean; allowNonLocal: boolean };
+  loop: LoopSettings;
   /** think-budget's rules (see src/think-budget/cap.ts); absent means think-budget.json is read instead. */
   thinkBudget?: { rules: unknown[] };
 }
@@ -38,6 +64,19 @@ export const DEFAULTS: Config = {
   bang: { enabled: true },
   // On: reads past sessions from disk, and refuses a model that isn't local since results can hold private work.
   sessionSearch: { enabled: true, allowNonLocal: false },
+  // Off: it runs other models for many minutes and needs them named (implementer.model, reviewer.model).
+  loop: {
+    enabled: false,
+    implementer: { model: '', tools: [], maxTurns: 40, maxMinutes: 15 },
+    reviewer: { model: '', tools: ['read', 'grep', 'find', 'ls', 'bash'], maxTurns: 45, maxMinutes: 12 },
+    wrapUpMinutes: 6,
+    maxRounds: 3,
+    maxTotalMinutes: 75,
+    gates: ['npm test', 'npm run check'],
+    gateTimeoutMinutes: 5,
+    gateRetries: 1,
+    startupSeconds: 60,
+  },
 };
 
 const BACKENDS: SearchBackend[] = ['off', 'searxng', 'ollama'];
@@ -56,18 +95,31 @@ export function parseConfig(raw: unknown): Config {
       continue;
     }
     if (!(section in out)) throw new Error(`unknown section "${section}"`);
-    const given = file[section] ?? {};
-    const target = out[section as keyof Config] as unknown as Record<string, unknown>;
-    for (const [key, value] of Object.entries(given)) {
-      if (!(key in target)) throw new Error(`unknown setting "${section}.${key}"`);
-      if (typeof value !== typeof target[key]) throw new Error(`"${section}.${key}" should be a ${typeof target[key]}`);
-      target[key] = value;
-    }
+    assign(out[section as keyof Config] as unknown as Record<string, unknown>, file[section] ?? {}, section);
   }
   if (!BACKENDS.includes(out.search.backend)) {
     throw new Error(`"search.backend" should be one of ${BACKENDS.map((b) => `"${b}"`).join(', ')}`);
   }
   return out;
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const kind = (v: unknown) => (Array.isArray(v) ? 'list' : typeof v);
+
+/** Copies settings onto the defaults, checking names and types; nested sections (loop.reviewer) merge too. */
+function assign(target: Record<string, unknown>, given: unknown, path: string) {
+  if (!isPlainObject(given)) throw new Error(`"${path}" should be an object`);
+  for (const [key, value] of Object.entries(given)) {
+    const where = `${path}.${key}`;
+    if (!(key in target)) throw new Error(`unknown setting "${where}"`);
+    if (isPlainObject(target[key])) {
+      assign(target[key] as Record<string, unknown>, value, where);
+      continue;
+    }
+    if (kind(value) !== kind(target[key])) throw new Error(`"${where}" should be a ${kind(target[key])}`);
+    if (Array.isArray(value) && value.some((v) => typeof v !== 'string')) throw new Error(`"${where}" should be a list of strings`);
+    target[key] = value;
+  }
 }
 
 /** The config from pi's agent directory; no file means the defaults. Each extension reads it at load. */
