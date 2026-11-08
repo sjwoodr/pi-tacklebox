@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { runLoop } from '../../src/loop/loop.ts';
+import { describeEvent } from '../../src/loop/progress.ts';
 import { FAKE_PI, fakePi, gitRepo, testConfig } from './helpers.ts';
 
 const calls = (log: string) => readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -114,7 +115,7 @@ test('the report shows read/s and write/s per role and in total', async () => {
 test('the report says "no checks" when there are none, and session ids are told apart', async () => {
   const { dir } = fakePi({ implementer: { turns: 1, writeFile: 'w.txt' }, reviewer: { turns: 1, texts: ['VERDICT: PASS'] } });
   const r = await runLoop({ task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
-  assert.match(r.markdown, /implementer implement → no checks/);
+  assert.match(r.markdown, /\| 1 \| implement \(impl\) → no checks/);
   assert.doesNotMatch(r.markdown, /checks ok/);
   const ids = r.steps.map((s) => s.sessionId!.slice(-12));
   assert.equal(new Set(ids).size, ids.length);
@@ -174,4 +175,17 @@ test('steps run with PI_OFFLINE=1', async () => {
   delete process.env.FAKE_PI_ENV_LOG;
   const seen = readFileSync(join(dir, 'env.log'), 'utf8').trim().split('\n');
   assert.ok(seen.length >= 2 && seen.every((v) => v === '1'), seen.join(','));
+});
+
+test('steps are named by what they are, with the short model name', async () => {
+  const { dir } = fakePi({ implementer: { turns: 1, writeFile: 'w.txt' }, reviewer: { turns: 1, texts: ['[high] bug\nVERDICT: CHANGES', 'VERDICT: PASS'] } });
+  const lines: string[] = [];
+  const cfg = testConfig(join(dir, 'runs'));
+  cfg.implementer.model = 'ollama/beam:cloud:medium';
+  cfg.reviewer.model = 'mac/qwen/qwen3.8-27b:off';
+  const r = await runLoop({ task: 't', cwd: gitRepo(), config: cfg, piCommand: FAKE_PI, onEvent: (e) => { const l = describeEvent(e); if (l) lines.push(l); } });
+  assert.deepEqual(lines.filter((l) => /^step \d+:/.test(l)), ['step 1: implement (beam:cloud)…', 'step 2: review 1 (qwen3.8-27b)…', 'step 3: fix review 1 (beam:cloud)…', 'step 4: review 2 (qwen3.8-27b)…']);
+  assert.match(r.markdown, /\| step \| what \|/);
+  assert.match(r.markdown, /\| 2 \| review 1 \(qwen3.8-27b\) → CHANGES/);
+  assert.match(r.markdown, /\| 3 \| fix review 1 \(beam:cloud\)/);
 });

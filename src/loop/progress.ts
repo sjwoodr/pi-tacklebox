@@ -1,4 +1,4 @@
-import type { LoopEvent } from './loop.ts';
+import { type LoopEvent, shortModel, stepLabel } from './loop.ts';
 
 const min = (ms: number) => `${(ms / 60_000).toFixed(1)} min`;
 const rate = (tokens: number, ms: number) => (ms > 0 && tokens > 0 ? `${Math.round((tokens * 1000) / ms)}/s` : '-');
@@ -9,12 +9,12 @@ export function describeEvent(e: LoopEvent): string | undefined {
     case 'start':
       return `pi-loop ${e.runId}: sessions in ${e.sessionDir}`;
     case 'step-start':
-      return `#${e.step.n} round ${e.step.round}: ${e.step.role} ${e.step.kind}…`;
+      return `step ${e.step.n}: ${stepLabel(e.step.kind, e.step.round)} (${shortModel(e.step.model)})…`;
     case 'step-end': {
       const s = e.step;
       const limit = s.stoppedBy ? ` · stopped by ${s.stoppedBy}${s.wrappedUp ? ', wrapped up' : ''}` : '';
       const v = s.verdict ? ` · VERDICT ${s.verdict.verdict} (${s.verdict.counts.critical} critical, ${s.verdict.counts.high} high, ${s.verdict.counts.minor} minor)` : '';
-      return `#${s.n} ${s.role} ${s.kind} done: ${s.turns} turns · ${min(s.ms)} · read ${rate(s.readTokens, s.readMs)} · write ${rate(s.writeTokens, s.writeMs)}${limit}${v}`;
+      return `step ${s.n} done: ${stepLabel(s.kind, s.round)} · ${s.turns} turns · ${min(s.ms)} · read ${rate(s.readTokens, s.readMs)} · write ${rate(s.writeTokens, s.writeMs)}${limit}${v}`;
     }
     case 'gates':
       return `checks: ${e.results.map((g) => `${g.command} ${g.ok ? 'ok' : g.timedOut ? 'TIMED OUT' : 'FAILED'}`).join(', ') || 'none'}`;
@@ -25,8 +25,8 @@ export function describeEvent(e: LoopEvent): string | undefined {
   }
 }
 
-/** The live status for one running step: "#3 reviewer review · 12 turns · 4.2 min · bash". */
+/** The live status for one running step: "step 3: review 1 · 12 turns · 4.2 min · bash". */
 export function describeProgress(e: Extract<LoopEvent, { kind: 'step-progress' }>): string {
   const p = e.progress;
-  return `#${e.step.n} ${e.step.role} ${e.step.kind} · ${p.turns} turns · ${min(p.elapsedMs)}${p.tool ? ` · ${p.tool}` : ''}`;
+  return `step ${e.step.n}: ${stepLabel(e.step.kind, e.step.round)} · ${p.turns} turns · ${min(p.elapsedMs)}${p.warned ? ' · warned' : ''}${p.tool ? ` · ${p.tool}` : ''}`;
 }

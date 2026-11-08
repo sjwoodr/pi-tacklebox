@@ -22,12 +22,28 @@ import { type Verdict, isClean, parseVerdict } from './verdict.ts';
 export type Role = 'implementer' | 'reviewer';
 export type StepKind = 'implement' | 'gate-fix' | 'review' | 'apply';
 
+/** What a step is, in words: "implement", "fix failed checks", "review 2", "fix review 2". */
+export function stepLabel(kind: StepKind, round: number): string {
+  if (kind === 'implement') return 'implement';
+  if (kind === 'gate-fix') return 'fix failed checks';
+  if (kind === 'review') return `review ${round}`;
+  return `fix review ${round}`;
+}
+
+/** A model pattern made short for display: "ollama/beam:cloud:medium" → "beam:cloud". */
+export function shortModel(pattern: string): string {
+  const tail = pattern.slice(pattern.lastIndexOf('/') + 1);
+  return tail.replace(/:(off|minimal|low|medium|high|xhigh|max)$/, '');
+}
+
 export interface StepRecord extends Speeds {
   n: number;
   round: number;
   role: Role;
   kind: StepKind;
   name: string;
+  /** The model pattern the step ran on. */
+  model: string;
   turns: number;
   ms: number;
   stoppedBy?: StepResult['stoppedBy'];
@@ -60,8 +76,8 @@ export interface LoopReport {
 
 export type LoopEvent =
   | { kind: 'start'; runId: string; sessionDir: string }
-  | { kind: 'step-start'; step: Pick<StepRecord, 'n' | 'round' | 'role' | 'kind' | 'name'> }
-  | { kind: 'step-progress'; step: Pick<StepRecord, 'n' | 'role' | 'kind'>; progress: StepProgress }
+  | { kind: 'step-start'; step: Pick<StepRecord, 'n' | 'round' | 'role' | 'kind' | 'name' | 'model'> }
+  | { kind: 'step-progress'; step: Pick<StepRecord, 'n' | 'round' | 'role' | 'kind'>; progress: StepProgress }
   | { kind: 'step-end'; step: StepRecord }
   | { kind: 'gates'; round: number; results: GateResult[] }
   | { kind: 'done'; report: LoopReport };
@@ -102,7 +118,7 @@ export async function runLoop(o: LoopOptions): Promise<LoopReport> {
     const rc: RoleConfig = cfg[role];
     const n = steps.length + 1;
     const name = `pi-loop ${runId} #${n} r${round} ${role} ${kind}`;
-    emit({ kind: 'step-start', step: { n, round, role, kind, name } });
+    emit({ kind: 'step-start', step: { n, round, role, kind, name, model: rc.model } });
     const common = { cwd, model: rc.model, sessionDir, piCommand: o.piCommand, signal: o.signal };
     // The warning and the asks happen inside the step's own pi process (RPC), so the conversation and the model
     // server's prompt cache stay warm and no half-sent request is left running.
@@ -117,7 +133,7 @@ export async function runLoop(o: LoopOptions): Promise<LoopReport> {
         finalAsk: WRAP_UP_INSIST(role),
         askMinutes: cfg.wrapUpMinutes,
         followUpFor: needsVerdict,
-        onProgress: (progress) => emit({ kind: 'step-progress', step: { n, role, kind }, progress }),
+        onProgress: (progress) => emit({ kind: 'step-progress', step: { n, round, role, kind }, progress }),
       });
     // A pi that never answers at start (seen intermittently in headless runs) is killed and retried once.
     let main = await run();
@@ -128,7 +144,7 @@ export async function runLoop(o: LoopOptions): Promise<LoopReport> {
       if (main.stoppedBy === 'startup') startupStalls++;
     }
     const record: StepRecord = {
-      n, round, role, kind, name, turns: main.turns, ms: main.ms, stoppedBy: main.stoppedBy, wrappedUp: main.asks > 0,
+      n, round, role, kind, name, model: rc.model, turns: main.turns, ms: main.ms, stoppedBy: main.stoppedBy, wrappedUp: main.asks > 0,
       warned: main.warned, startupStalls, sessionId: main.sessionId, exitCode: main.exitCode, text: main.text,
       readTokens: main.readTokens, readMs: main.readMs, writeTokens: main.writeTokens, writeMs: main.writeMs,
     };
@@ -229,12 +245,12 @@ export function renderReport(r: LoopReport, cfg: LoopConfig): string {
   lines.push(`# pi-loop ${r.runId}`, '');
   lines.push(`**Outcome: ${r.outcome}** (${r.detail}). ${min(r.ms)}, ${r.steps.length} steps.`, '');
   lines.push(`Implementer \`${cfg.implementer.model}\`, reviewer \`${cfg.reviewer.model}\`.`, '');
-  lines.push('| # | round | step | turns | time | read | write | limit | session |', '|---|---|---|---|---|---|---|---|---|');
+  lines.push('| step | what | turns | time | read | write | limit | session |', '|---|---|---|---|---|---|---|---|');
   for (const s of r.steps) {
     const limit = [s.warned ? 'warned' : '', s.stoppedBy ? `${s.stoppedBy}${s.wrappedUp ? ', wrapped up' : ''}` : (s.wrappedUp ? 'asked again' : ''), s.startupStalls ? `${s.startupStalls} startup stall${s.startupStalls > 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
     const v = s.verdict ? ` → ${s.verdict.verdict} (${s.verdict.counts.critical}c/${s.verdict.counts.high}h/${s.verdict.counts.minor}m)` : '';
     const g = !s.gates ? '' : !s.gates.length ? ' → no checks' : ` → checks ${s.gates.every((x) => x.ok) ? 'ok' : 'FAILED'}`;
-    lines.push(`| ${s.n} | ${s.round} | ${s.role} ${s.kind}${v}${g} | ${s.turns} | ${min(s.ms)} | ${perSec(s.readTokens, s.readMs)} | ${perSec(s.writeTokens, s.writeMs)} | ${limit} | ${s.sessionId?.slice(-12) ?? ''} |`);
+    lines.push(`| ${s.n} | ${stepLabel(s.kind, s.round)} (${shortModel(s.model)})${v}${g} | ${s.turns} | ${min(s.ms)} | ${perSec(s.readTokens, s.readMs)} | ${perSec(s.writeTokens, s.writeMs)} | ${limit} | ${s.sessionId?.slice(-12) ?? ''} |`);
   }
   lines.push('');
   for (const role of ['implementer', 'reviewer'] as const) {

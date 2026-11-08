@@ -10,7 +10,7 @@ import { basename } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { parseArgs, USAGE } from './args.ts';
 import { loopConfig, loopEnabled } from './settings.ts';
-import { type LoopEvent, type LoopReport, runLoop } from './loop.ts';
+import { type LoopEvent, type LoopReport, runLoop, stepLabel } from './loop.ts';
 import { describeEvent, describeProgress } from './progress.ts';
 import { describeConfig, SUBCOMMANDS, subcommandOf } from './show-config.ts';
 
@@ -112,7 +112,7 @@ export default function (pi: ExtensionAPI) {
         } else {
           const line = describeEvent(e);
           if (line) state.log.push(line);
-          if (e.kind === 'step-start') state.status = `#${e.step.n} ${e.step.role} ${e.step.kind}`;
+          if (e.kind === 'step-start') state.status = `step ${e.step.n}: ${stepLabel(e.step.kind, e.step.round)}`;
         }
         show();
       };
