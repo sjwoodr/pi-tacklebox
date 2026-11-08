@@ -105,3 +105,20 @@ and stop at the verdict).
 Every agent step gets the same limits, steers, sessions and speeds as the loop. A workflow in tacklebox.json is
 checked when the loop loads, and a mistake is named (`loop.workflows.two-tries: "b": after "x", which isn't an
 earlier node in the same list`).
+
+## /flow: a workflow for one run
+
+`/flow <what you want>` asks the conversation's model to draft a workflow in the format above and hand it to the
+`flow_run` tool. The tool checks it (a broken one goes back to the model with each problem named), then asks you:
+**Run**, **Edit** (the JSON, in pi's editor, checked again) or **Cancel**. Only a run you approve starts, in the
+background like `/loop`, with the same limits and report. The model plans; code runs, so the report says what
+happened, not the model.
+
+`/flow save NAME` adds the last workflow that ran to `tacklebox.json` (`loop.workflows.NAME`); after that,
+`/loop --workflow NAME <task>` runs it again. Built-in names can't be reused.
+
+For example: `/flow beam and qwen each try this in their own copy, at the same time; then you compare the two
+patches and tell me which is better: add a --dry-run flag to the deploy script`.
+
+The `flow_run` tool is offered to the model in every session while the loop is on (its description asks it to
+be used only after `/flow`), so its definition is part of every request.

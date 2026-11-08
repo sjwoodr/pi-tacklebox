@@ -115,7 +115,7 @@ test('the extension registers nothing until tacklebox.json turns the loop on', a
     process.env.PI_CODING_AGENT_DIR = dir;
     const commands: string[] = [];
     try {
-      loop({ registerCommand: (name: string) => commands.push(name), on: () => {}, sendMessage: () => {} } as never);
+      loop({ registerCommand: (name: string) => commands.push(name), registerTool: (tool: { name: string }) => commands.push(`tool:${tool.name}`), on: () => {}, sendMessage: () => {} } as never);
     } finally {
       if (before === undefined) delete process.env.PI_CODING_AGENT_DIR;
       else process.env.PI_CODING_AGENT_DIR = before;
@@ -124,7 +124,7 @@ test('the extension registers nothing until tacklebox.json turns the loop on', a
   };
   assert.deepEqual(load(), []);
   assert.deepEqual(load({ loop: { enabled: false } }), []);
-  assert.deepEqual(load({ loop: { enabled: true } }), ['loop', 'loop-status', 'loop-stop']);
+  assert.deepEqual(load({ loop: { enabled: true } }), ['loop', 'flow', 'tool:flow_run', 'loop-status', 'loop-stop']);
   assert.equal(subcommandOf('workflows'), 'workflows');
 });
 

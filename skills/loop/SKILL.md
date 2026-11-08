@@ -11,7 +11,10 @@ The loop runs in the current repository. The user normally starts it with the `/
 /loop [--rounds N] [--minutes N] [--implementer MODEL] [--reviewer MODEL] [--no-gates] <task>
 ```
 
-`/loop status` shows progress, `/loop stop` stops it and `/loop config` shows the settings. The report
+`/loop status` shows progress, `/loop stop` stops it, `/loop config` shows the settings and `/loop workflows`
+lists the named workflows (`/loop --workflow NAME <task>` runs one). For a one-off shape (parallel attempts,
+a plan step, a comparison), the user can type `/flow <what they want>`: you then draft a workflow and call
+`flow_run`; never call `flow_run` unless the user typed `/flow`. The report
 appears in the conversation when it ends, and is saved as `report.md` next to the run's sessions.
 
 If the user asks you to start it yourself, write the task to a file and run the CLI in the background
