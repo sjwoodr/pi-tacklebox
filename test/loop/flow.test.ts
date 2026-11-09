@@ -13,6 +13,8 @@ test('the planner prompt names the models, the rules and the tool', () => {
   const p = plannerPrompt('two models try it, main picks', cfg, 'ollama/gemma4:latest');
   assert.match(p, /two models try it, main picks/);
   assert.match(p, /"implementer" \(fake\/impl\), "reviewer" \(fake\/rev\), "main"\s+\(ollama\/gemma4:latest\)/);
+  assert.match(p, /"verdict": true makes a step end with a VERDICT line/, 'how a non-reviewer model judges');
+  assert.match(p, /use "role": "helper"/);
   assert.match(p, /Call flow_run with "task"/);
   assert.match(p, /"review-loop"|"id":"implement"/);
 });

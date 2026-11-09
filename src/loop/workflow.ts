@@ -178,7 +178,7 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
         if (n.max !== undefined && !(Number.isInteger(n.max) && n.max >= 1 && n.max <= 10)) errors.push(`"${n.id}": "max" must be 1 to 10`);
         const hasVerdict = (nodes: WorkflowNode[]): boolean =>
           nodes.some((c) => (isAgent(c) && (c.verdict ?? (c.role ?? (c.agent === 'reviewer' ? 'reviewer' : '')) === 'reviewer')) || (isRepeat(c) && hasVerdict(c.repeat)));
-        if (Array.isArray(n.repeat) && !hasVerdict(n.repeat)) errors.push(`"${n.id}": a repeat until clean needs a step with a verdict (a reviewer)`);
+        if (Array.isArray(n.repeat) && !hasVerdict(n.repeat)) errors.push(`"${n.id}": a repeat until clean needs a step with a verdict: give the checking step "verdict": true, or use "agent": "reviewer"`);
         if (Array.isArray(n.repeat)) check(n.repeat, [...scope, n.id]);
       }
       seen.push(n.id);

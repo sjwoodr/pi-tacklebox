@@ -16,7 +16,7 @@ test('validation names each problem', () => {
   assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'a', agent: 'implementer', prompt: 'y' }] }), /duplicate id "a"/);
   assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'use {zz}' }] }), /no agent node "zz"/);
   assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'b', agent: 'implementer', prompt: '{a.patch}' }] }), /needs "a" to have "workspace": "own"/);
-  assert.match(errs({ nodes: [{ id: 'r', until: 'clean', repeat: [{ id: 'a', agent: 'implementer', prompt: 'x' }] }] }), /needs a step with a verdict/);
+  assert.match(errs({ nodes: [{ id: 'r', until: 'clean', repeat: [{ id: 'a', agent: 'implementer', prompt: 'x' }] }] }), /needs a step with a verdict: give the checking step "verdict": true/);
   assert.match(errs({ nodes: [{ id: 'a', agent: 'main', prompt: 'x' }] }), /"main" needs a main model/);
   assert.equal(errs({ nodes: [{ id: 'a', agent: 'main', prompt: 'x' }] }, true), '');
   assert.match(errs({ nodes: [{ id: 'a', checks: 'gates', onFail: { fix: 'nope' } }] }), /onFail.fix "nope" is not an agent node/);

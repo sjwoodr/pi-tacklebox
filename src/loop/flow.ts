@@ -18,7 +18,8 @@ What the user wants:
 ${description}
 
 A workflow is JSON: { "description": "...", "nodes": [ ... ] }. Each node is one of:
-- an agent step: { "id": "a", "agent": "...", "prompt": "...", "workspace": "repo"|"copy"|"own", "after": [...] }
+- an agent step: { "id": "a", "agent": "...", "prompt": "...", "workspace": "repo"|"copy"|"own", "after": [...] },
+  optionally with "verdict": true, "role": "implementer"|"reviewer"|"helper", "label": "...", "maxTurns": N, "maxMinutes": N
 - checks: { "id": "c", "checks": "gates" | ["shell command", ...], "onFail": { "fix": "<agent step id>" } }
 - a repeat: { "id": "r", "until": "clean", "max": 3, "repeat": [ ...nodes... ] }
 
@@ -35,7 +36,12 @@ Rules:
 - A step that only writes text (a story, an answer, a summary, a review) changes no files: use "copy", pass its
   text on with {id}, and ask for the text itself in the reply. The user sees the last step's reply.
 - Prompts can use {task} (the task below), {id} (a step's last output) and {id.patch} (an own step's patch file).
-- A reviewer must end with a VERDICT line; a repeat "until": "clean" needs one, and stops when it passes.
+- "verdict": true makes a step end with a VERDICT line (PASS or CHANGES, findings tagged [critical], [high] or
+  [minor]); "agent": "reviewer" has it already. A repeat "until": "clean" needs such a step, and stops when it
+  passes. Any model can be the one that judges: give it "verdict": true.
+- "role" picks a step's standing instructions. The implementer's and reviewer's are written for code (tests, type
+  checks, git diff); for anything else (text, French, research) use "role": "helper". By default the implementer
+  and reviewer get their own, and any other agent a helper's.
 - "checks": "gates" runs the project's tests (${cfg.gates.join(' && ') || 'none configured'}).
 - Keep it as small as the request allows.
 
