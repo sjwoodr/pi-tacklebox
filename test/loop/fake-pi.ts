@@ -8,7 +8,8 @@
  *               steeredText?: string (the report after a steer), ignoreSteer?: boolean,
  *               writeFile?: string (append to this file in cwd each call),
  *               spawnSleeper?: string (write the pid of a `sleep 60` child to this file),
- *               hangOnClose?: boolean (don't exit when stdin closes) }
+ *               hangOnClose?: boolean (don't exit when stdin closes),
+ *               failStart?: string (print this to stderr and exit 1 at once, as pi does for an unknown model) }
  *   wrapUp: the answer to each prompt after the first (the final ask or a follow-up).
  */
 import { spawn } from 'node:child_process';
@@ -28,6 +29,7 @@ interface Behavior {
   hangOnClose?: boolean;
   /** Answer with "OUT:" and the first line of the prompt, so tests can follow outputs between steps. */
   echoPrompt?: boolean;
+  failStart?: string;
 }
 
 const args = process.argv.slice(2);
@@ -47,6 +49,10 @@ const out = (e: unknown) => process.stdout.write(JSON.stringify(e) + '\n');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 log({ cmd: 'start', args });
+if (b.failStart) {
+  process.stderr.write(`${b.failStart}\n`);
+  process.exit(1);
+}
 if (process.env.FAKE_PI_ENV_LOG) appendFileSync(process.env.FAKE_PI_ENV_LOG, `${process.env.PI_OFFLINE ?? ''}\n`);
 
 // stallFirstStart: the first start of this role never answers anything (a startup hang).

@@ -50,6 +50,7 @@ test('flow_run: problems go back to the model; the user can edit, then cancel, a
     const shown: string[] = [];
     const ctx = {
       hasUI: true, cwd: dir, model: { provider: 'ollama', id: 'gemma4' },
+      modelRegistry: { getAll: () => [{ provider: 'a', id: 'b' }, { provider: 'c', id: 'd' }, { provider: 'ollama', id: 'gemma4' }] },
       ui: {
         select: async (title: string) => { shown.push(title); return choices.shift(); },
         editor: async (_t: string, prefill: string) => prefill.replace('"{task}"', '"{task} carefully"'),
@@ -59,6 +60,8 @@ test('flow_run: problems go back to the model; the user can edit, then cancel, a
     const run = (workflow: string) => tools.flow_run.execute('id', { task: 'the job', workflow }, undefined, undefined, ctx);
     const bad = await run('{"nodes":[{"id":"x","agent":"nobody","prompt":"p"}]}');
     assert.match(bad.content[0].text, /problems; fix them[\s\S]*agent "nobody"/);
+    const unknown = await run('{"nodes":[{"id":"x","agent":"gemma/gemma4","prompt":"p"}]}');
+    assert.match(unknown.content[0].text, /problems; fix them[\s\S]*"x": pi has no model "gemma\/gemma4"; did you mean ollama\/gemma4\?/);
     const cancelled = await run(JSON.stringify(good));
     assert.match(cancelled.content[0].text, /cancelled/);
     assert.equal(shown.length, 2, 'shown, edited, shown again');

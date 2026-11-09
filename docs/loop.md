@@ -25,8 +25,12 @@ implement → checks → review (on a throwaway copy) → clean? stop : fix → 
   `maxRounds`, when a fix changes nothing, when the reviewer gives no verdict even when asked again, or when
   the total time runs out. A review with no verdict is never handed to the implementer.
 - **Every step keeps its session** under `~/.pi/agent/sessions/loop/<run id>/`, named by step, with a
-  `report.md`: per step the turns, minutes, read/s and write/s and any limit hit, per role and in total, the
-  final checks, and the last review. Steps run with `PI_OFFLINE=1` (no startup network work).
+  `report.md`: the models that ran, per step the turns, minutes, read/s and write/s and any limit hit, per role
+  and in total, the final checks, the last step's answer and the last review. Each step's whole answer is saved
+  next to it as `<id>-r<round>.md`. The final checks run only when a step worked in the real repo. Steps run
+  with `PI_OFFLINE=1` (no startup network work).
+- **A step that never ran stops the run:** if pi exits before its first turn (an unknown model, a crash at
+  start), the outcome is "error" with pi's message, and no later step gets its empty output.
 
 The loop is only as good as its reviewer: a gap the reviewer misses is never fixed.
 
@@ -58,7 +62,10 @@ Off by default. In `tacklebox.json`, the models are required; everything else ha
 ```
 
 Model patterns take pi's thinking suffix, `provider/model:level`; pi splits at the last colon, so
-`ollama/beam:cloud:medium` works. `tools: []` means pi's defaults. Give the implementer a model that edits
+`ollama/beam:cloud:medium` works. Every model a run would use is checked against pi's models before it starts:
+it must be an exact `provider/id`, or a bare id only one provider has. pi alone would also take a partial name
+and quietly pick a model (`gpt-oss` gets the local 20B, not `gpt-oss:120b-cloud`), so the loop refuses those
+and suggests the full names. `tools: []` means pi's defaults. Give the implementer a model that edits
 reliably and the reviewer one that reads carefully; a fast model that loops on edits won't get far.
 
 ## Workflows
@@ -92,7 +99,9 @@ and stop at the verdict).
   or any pi model pattern. `role` (`implementer`, `reviewer`, `helper`) picks the instructions; by default
   the reviewer gets the reviewer's, the implementer the implementer's, anything else a helper's.
 - **`workspace`:** `repo` (the real repo; default), `copy` (a throwaway copy: default for reviewers), `own` (a
-  private copy whose changes are kept as a patch for later steps, `{id.patch}`; the repo is left alone).
+  private copy whose changes are kept as a patch for later steps, `{id.patch}`; the repo is left alone). A copy
+  starts with the repo's uncommitted work; an `own` patch holds only what the step changed on top of that (none
+  if it changed nothing). A step that only writes text (a story, an answer) needs `copy`, not `own`.
 - **Prompts:** `{task}`, `{round}`, `{again}` (a note for later review rounds), `{id}` (a step's last output),
   `{id.patch}`.
 - **Steps that must deliver:** `verdict: true` (default for reviewers) means a VERDICT line is required: none,

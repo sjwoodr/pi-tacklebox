@@ -19,7 +19,7 @@ import { type LoopEvent, type LoopReport, runLoop, workflows } from './loop.ts';
 import { describeEvent, describeProgress } from './progress.ts';
 import { type LoopConfig, loopConfig, loopEnabled } from './settings.ts';
 import { describeConfig, describeWorkflows, SUBCOMMANDS, subcommandOf } from './show-config.ts';
-import { BUILT_IN, type Workflow, describeWorkflow, runWorkflow, validateWorkflow } from './workflow.ts';
+import { BUILT_IN, type KnownModel, type Workflow, checkModels, describeWorkflow, runWorkflow, validateWorkflow } from './workflow.ts';
 
 /** The command that started this pi, so steps run the same pi (as pi's subagent example does). */
 function piCommand(): string[] {
@@ -34,6 +34,9 @@ export function mainModelOf(ctx: ExtensionContext): string | undefined {
   const m = ctx.model as { provider?: string; id?: string } | undefined;
   return m?.provider && m.id ? `${m.provider}/${m.id}` : undefined;
 }
+
+/** pi's models, for checking a workflow's model names before it runs. */
+const knownModels = (ctx: ExtensionContext): KnownModel[] => ctx.modelRegistry.getAll().map((m) => ({ provider: m.provider, id: m.id }));
 
 interface LoopState {
   controller: AbortController;
@@ -148,6 +151,8 @@ export default function (pi: ExtensionAPI) {
       if (!config.implementer.model || !config.reviewer.model) return ctx.ui.notify(NEEDS_MODELS, 'error');
       const name = config.workflow;
       if (!workflows(config)[name]) return ctx.ui.notify(`No workflow named "${name}": /loop workflows lists them.`, 'error');
+      const badModels = checkModels(workflows(config)[name], config, mainModelOf(ctx), knownModels(ctx));
+      if (badModels.length) return ctx.ui.notify(`Not started:\n- ${badModels.join('\n- ')}`, 'error');
       ctx.ui.notify(`Loop started (${name}): implementer ${config.implementer.model}, reviewer ${config.reviewer.model}.`, 'info');
       start(ctx, (signal, onEvent) =>
         runLoop({ task: parsed.task, cwd: ctx.cwd, config, workflow: name, mainModel: mainModelOf(ctx), piCommand: piCommand(), signal, onEvent }));
@@ -200,7 +205,8 @@ export default function (pi: ExtensionAPI) {
         const mainModel = mainModelOf(ctx);
         let { workflow, error } = parseWorkflow(params.workflow);
         for (;;) {
-          const problems = error ? [error] : validateWorkflow(workflow, { mainModel: !!mainModel });
+          let problems = error ? [error] : validateWorkflow(workflow, { mainModel: !!mainModel });
+          if (!problems.length) problems = checkModels(workflow!, config, mainModel, knownModels(ctx));
           if (problems.length) {
             return text(`The workflow has problems; fix them and call flow_run again:\n- ${problems.join('\n- ')}`);
           }
@@ -212,7 +218,8 @@ export default function (pi: ExtensionAPI) {
           if (edited === undefined) return text('The user cancelled the workflow. Ask what they want changed.');
           ({ workflow, error } = parseWorkflow(edited));
           if (!error) {
-            const again = validateWorkflow(workflow, { mainModel: !!mainModel });
+            let again = validateWorkflow(workflow, { mainModel: !!mainModel });
+            if (!again.length) again = checkModels(workflow!, config, mainModel, knownModels(ctx));
             if (again.length) {
               ctx.ui.notify(`The edited workflow has problems:\n- ${again.join('\n- ')}`, 'error');
               ({ workflow, error } = parseWorkflow(params.workflow));

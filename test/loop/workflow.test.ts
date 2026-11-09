@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { runLoop } from '../../src/loop/loop.ts';
-import { runWorkflow, validateWorkflow, type Workflow } from '../../src/loop/workflow.ts';
+import { checkModels, runWorkflow, validateWorkflow, type Workflow } from '../../src/loop/workflow.ts';
 import { FAKE_PI, fakePi, gitRepo, testConfig } from './helpers.ts';
 
 const log = (file: string) => readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -106,4 +106,76 @@ test('a stop in one branch keeps later nodes from starting', async () => {
   const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
   assert.equal(r.outcome, 'no verdict');
   assert.ok(!log(file).some((e) => e.cmd === 'prompt' && e.message === 'never'));
+});
+
+test('a step whose pi exits before its first turn stops the run as an error, with pi\'s message', async () => {
+  const { dir, log: file } = fakePi({ implementer: { turns: 1, failStart: 'Error: Model "gpt-oss/gpt-oss:120b-cloud" not found.' } });
+  const wf: Workflow = { nodes: [
+    { id: 'story', agent: 'implementer', prompt: 'write it', workspace: 'copy' },
+    { id: 'correct', agent: 'reviewer', role: 'helper', verdict: false, workspace: 'copy', prompt: 'correct {story}' },
+  ] };
+  const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs')), piCommand: FAKE_PI });
+  assert.equal(r.outcome, 'error');
+  assert.match(r.detail, /story didn't run: Error: Model "gpt-oss\/gpt-oss:120b-cloud" not found/);
+  assert.match(r.steps[0].error!, /not found/);
+  assert.deepEqual(r.steps.map((s) => s.id), ['story'], 'the next step never starts with an empty {story}');
+  assert.ok(!log(file).some((e) => e.cmd === 'prompt' && e.message.startsWith('correct')));
+  assert.match(r.markdown, /FAILED: Error: Model/);
+});
+
+test('an own patch holds only what the step changed, not the repo\'s uncommitted work or the node_modules link', async () => {
+  const { dir } = fakePi({ implementer: { turns: 1, writeFile: 'idea.txt' }, reviewer: { turns: 1 } });
+  const repo = gitRepo();
+  writeFileSync(join(repo, 'a.txt'), 'one\nwork in progress\n');
+  writeFileSync(join(repo, 'untracked.txt'), 'mine\n');
+  mkdirSync(join(repo, 'node_modules'));
+  writeFileSync(join(repo, '.gitignore'), 'node_modules/\n');
+  const wf: Workflow = { nodes: [
+    { id: 'try', agent: 'implementer', prompt: 'try it', workspace: 'own' },
+    { id: 'idle', agent: 'reviewer', verdict: false, prompt: 'just answer', workspace: 'own', after: [] },
+  ] };
+  const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: repo, config: testConfig(join(dir, 'runs')), piCommand: FAKE_PI });
+  const patch = readFileSync(r.steps.find((s) => s.id === 'try')!.patchFile!, 'utf8');
+  assert.match(patch, /idea\.txt/);
+  assert.doesNotMatch(patch, /b\/a\.txt|untracked\.txt|node_modules|gitignore/);
+  const idle = r.steps.find((s) => s.id === 'idle')!;
+  assert.equal(idle.patchFile, undefined);
+  assert.equal(idle.noChanges, true);
+  assert.match(r.markdown, /no file changes/);
+});
+
+test('the report shows the last step\'s answer and the models that ran; every answer is saved; checks skip when no step used the repo', async () => {
+  // Both steps run as the fake's "implementer" (a helper isn't told it reviews): one text per call, in order.
+  const { dir } = fakePi({ implementer: { turns: 1, texts: ['Il était une fois un fromage.', 'Il était une fois un fromage, corrigé.'] } });
+  const wf: Workflow = { nodes: [
+    { id: 'story', agent: 'implementer', prompt: 'write', workspace: 'copy' },
+    { id: 'correct', agent: 'reviewer', role: 'helper', verdict: false, prompt: 'correct {story}', workspace: 'copy' },
+  ] };
+  const r = await runWorkflow({ workflow: wf, name: 'flow', task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs'), { gates: ['false'] }), piCommand: FAKE_PI });
+  assert.equal(r.outcome, 'finished');
+  assert.match(r.markdown, /## Output: correct \(rev\)\n\nIl était une fois un fromage, corrigé\./);
+  assert.match(r.markdown, /Models: `fake\/impl`, `fake\/rev`\./);
+  assert.equal(readFileSync(r.steps[0].outputFile!, 'utf8'), 'Il était une fois un fromage.\n');
+  assert.deepEqual(r.finalGates, [], 'gates: ["false"] would have failed if run');
+  assert.match(r.markdown, /not run \(no step worked in the repo\)/);
+});
+
+test('model names must match one pi model exactly; near misses get suggestions', () => {
+  const known = [
+    { provider: 'ollama', id: 'gpt-oss:120b-cloud' },
+    { provider: 'ollama', id: 'gpt-oss:20b' },
+    { provider: 'mac-lmstudio', id: 'qwen/qwen3.8-27b' },
+    { provider: 'ollama', id: 'gemma4:latest' },
+    { provider: 'other', id: 'gemma4:latest' },
+  ];
+  const cfg = testConfig('/tmp', { implementer: { model: 'ollama/gpt-oss:120b-cloud:low', tools: [], maxTurns: 1, maxMinutes: 1 }, reviewer: { model: 'qwen/qwen3.8-27b:off', tools: [], maxTurns: 1, maxMinutes: 1 } });
+  const errs = (agents: string[], main?: string) =>
+    checkModels({ nodes: agents.map((agent, i) => ({ id: `s${i}`, agent, prompt: 'x', after: [] })) }, cfg, main, known);
+  assert.deepEqual(errs(['implementer', 'reviewer', 'mac-lmstudio/qwen/qwen3.8-27b:high', 'gpt-oss:20b']), [], 'exact names, bare unique ids and thinking levels pass');
+  const [bad] = errs(['gpt-oss/gpt-oss:120b-cloud']);
+  assert.match(bad, /"s0": pi has no model "gpt-oss\/gpt-oss:120b-cloud"; did you mean ollama\/gpt-oss:120b-cloud, ollama\/gpt-oss:20b\?/);
+  assert.match(errs(['gpt-oss'])[0], /no model "gpt-oss"/, 'a partial name pi would resolve on its own is refused');
+  assert.match(errs(['gemma4:latest'])[0], /more than one provider; name one: ollama\/gemma4:latest, other\/gemma4:latest/);
+  assert.deepEqual(errs(['main']), [], 'no main model: validation reports that, not this');
+  assert.match(errs(['main'], 'nope/x')[0], /main: pi has no model "nope\/x"/);
 });

@@ -23,7 +23,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type GateResult, runGates } from './gates.ts';
 import { HELPER_ROLE, IMPLEMENTER_ROLE, REVIEWER_ROLE, VERDICT_ASK, WARNING, WRAP_UP_INSIST, gateFixPrompt } from './prompts.ts';
-import { type LoopEvent, type LoopReport, type Outcome, type Role, type StepRecord, renderReport } from './report.ts';
+import { type LoopEvent, type LoopReport, type Outcome, type Role, type StepRecord, renderReport, withoutThinking } from './report.ts';
 import { makeReviewCopy, workFingerprint } from './review-copy.ts';
 import type { LoopConfig, RoleConfig } from './settings.ts';
 import { runStep } from './step.ts';
@@ -224,6 +224,53 @@ export interface RunOptions {
 
 type Signal = { kind: 'ok' } | { kind: 'skip' } | { kind: 'clean'; round: number } | { kind: 'final'; round: number } | { kind: 'stop'; outcome: Outcome; detail: string };
 
+/** A model pi knows: provider and id, as its model registry lists them. */
+export interface KnownModel {
+  provider: string;
+  id: string;
+}
+
+/**
+ * Every model a workflow would run, checked against pi's models before anything starts. A pattern must name one
+ * model exactly ("provider/id" or a bare id only one provider has), with an optional thinking level: pi itself
+ * also takes partial names, and quietly picks one ("gpt-oss" got the local 20B, not the 120B cloud model).
+ */
+export function checkModels(workflow: Workflow, cfg: LoopConfig, mainModel: string | undefined, known: KnownModel[]): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  const check = (where: string, pattern: string) => {
+    const p = withoutThinking(pattern);
+    if (seen.has(p)) return;
+    seen.add(p);
+    if (known.some((m) => `${m.provider}/${m.id}` === p)) return;
+    const byId = known.filter((m) => m.id === p);
+    if (byId.length === 1) return;
+    if (byId.length > 1) {
+      errors.push(`${where}: "${pattern}" is in more than one provider; name one: ${byId.map((m) => `${m.provider}/${m.id}`).join(', ')}`);
+      return;
+    }
+    const word = p.slice(p.lastIndexOf('/') + 1).split(':')[0].toLowerCase();
+    const near = known.filter((m) => `${m.provider}/${m.id}`.toLowerCase().includes(word)).slice(0, 5).map((m) => `${m.provider}/${m.id}`);
+    errors.push(`${where}: pi has no model "${pattern}"${near.length ? `; did you mean ${near.join(', ')}?` : ' (pi --list-models lists them)'}`);
+  };
+  const walk = (nodes: WorkflowNode[]) => {
+    for (const n of nodes) {
+      if (isRepeat(n)) walk(n.repeat);
+      else if (isAgent(n)) {
+        if (n.agent === 'implementer') check('implementer', cfg.implementer.model);
+        else if (n.agent === 'reviewer') check('reviewer', cfg.reviewer.model);
+        else if (n.agent === 'main') { if (mainModel) check('main', mainModel); }
+        else check(`"${n.id}"`, n.agent);
+      }
+    }
+  };
+  walk(workflow.nodes);
+  return errors;
+}
+
+/** The last line pi wrote to stderr, for a step that failed before it started. */
+const lastLine = (text: string) => text.trim().split('\n').filter((l) => l.trim()).at(-1)?.trim().slice(0, 300);
+
 export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
   const cfg = o.config;
   const errors = validateWorkflow(o.workflow, { mainModel: !!o.mainModel });
@@ -243,6 +290,8 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
   const index = (nodes: WorkflowNode[]) => nodes.forEach((n) => { nodesById.set(n.id, n); if (isRepeat(n)) index(n.repeat); });
   index(o.workflow.nodes);
   let lastReview: string | undefined;
+  /** Whether any step worked in the real repo; if none did, there is nothing for the final checks to check. */
+  let touchedRepo = false;
   let halted: Signal | undefined;
   let result: { outcome: Outcome; detail: string } | undefined;
   const aborted = () => o.signal?.aborted ?? false;
@@ -283,7 +332,19 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     const name = `pi-loop ${runId} #${stepN} ${label}`;
     emit({ kind: 'step-start', step: { n: stepN, id: n.id, round, role, kind, label, name, model: rc.model } });
     const copy = workspace === 'repo' ? undefined : makeReviewCopy(o.cwd, `${n.id}-r${round}`);
+    if (!copy) touchedRepo = true;
     const cwd = copy?.path ?? o.cwd;
+    // The copy starts with the repo's uncommitted work (and a node_modules link): an own step's patch is what
+    // the step changed on top of that, so record where it started.
+    let baseTree: string | undefined;
+    if (copy && workspace === 'own') {
+      try {
+        execFileSync('git', ['add', '-A'], { cwd: copy.path, stdio: 'pipe' });
+        baseTree = execFileSync('git', ['write-tree'], { cwd: copy.path, stdio: 'pipe' }).toString().trim();
+      } catch {
+        // no base: the patch falls back to HEAD
+      }
+    }
     const before = n.progress && workspace === 'repo' && kind !== 'gate-fix' ? workFingerprint(o.cwd) : undefined;
     const instructions = role === 'reviewer' ? REVIEWER_ROLE(rc) : role === 'implementer' ? IMPLEMENTER_ROLE(rc) : HELPER_ROLE(rc);
     const run = () =>
@@ -317,18 +378,28 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
       exitCode: main.exitCode, text: main.text,
       readTokens: main.readTokens, readMs: main.readMs, writeTokens: main.writeTokens, writeMs: main.writeMs,
     };
-    if (copy && workspace === 'own') {
+    // pi that exits before its first turn never ran the step: an unknown model, a crash at start.
+    if (main.turns === 0 && !main.stoppedBy && !aborted())
+      record.error = lastLine(main.stderrTail) ?? `pi exited (code ${main.exitCode}) before its first turn`;
+    if (copy && workspace === 'own' && !record.error) {
       const file = join(sessionDir, `${n.id}-r${round}.patch`);
       try {
         execFileSync('git', ['add', '-A'], { cwd: copy.path, stdio: 'pipe' });
-        writeFileSync(file, execFileSync('git', ['diff', '--cached', '--binary', 'HEAD'], { cwd: copy.path, maxBuffer: 64 * 1024 * 1024 }));
-        record.patchFile = file;
-        patches.set(n.id, file);
+        const patch = execFileSync('git', ['diff', '--cached', '--binary', baseTree ?? 'HEAD'], { cwd: copy.path, maxBuffer: 64 * 1024 * 1024 });
+        if (patch.length) {
+          writeFileSync(file, patch);
+          record.patchFile = file;
+          patches.set(n.id, file);
+        } else record.noChanges = true;
       } catch {
         // no patch: the report shows none
       }
     }
     copy?.remove();
+    if (record.text.trim()) {
+      record.outputFile = join(sessionDir, `${n.id}-r${round}${kind === 'gate-fix' ? '-fix' : ''}.md`);
+      writeFileSync(record.outputFile, record.text.endsWith('\n') ? record.text : record.text + '\n');
+    }
     if (wantsVerdict) record.verdict = parseVerdict(record.text);
     steps.push(record);
     steps.sort((a, b) => a.n - b.n);
@@ -336,6 +407,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     emit({ kind: 'step-end', step: record });
     if (aborted()) return outOfTime();
     if (main.stoppedBy === 'startup') return { kind: 'stop', outcome: 'error', detail: `${label}: pi didn't start, twice` };
+    if (record.error) return { kind: 'stop', outcome: 'error', detail: `${label} didn't run: ${record.error}` };
     if (before !== undefined && workFingerprint(o.cwd) === before)
       return { kind: 'stop', outcome: 'no progress', detail: `round ${round}: ${label} changed nothing` };
     if (record.verdict) {
@@ -425,10 +497,14 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     result = { outcome: 'error', detail: err instanceof Error ? err.message : String(err) };
   }
 
-  const finalGates = aborted() ? [] : await runGates(cfg.gates, o.cwd, cfg.gateTimeoutMinutes * 60_000);
+  const finalGatesSkipped = aborted() ? 'stopped' : !touchedRepo ? 'no step worked in the repo' : undefined;
+  const finalGates = finalGatesSkipped ? [] : await runGates(cfg.gates, o.cwd, cfg.gateTimeoutMinutes * 60_000);
   const reportFile = join(sessionDir, 'report.md');
-  const report: LoopReport = { runId, workflow: o.name, outcome: result.outcome, detail: result.detail, ms: Date.now() - started, steps, finalGates, lastReview, sessionDir, reportFile, markdown: '' };
-  report.markdown = renderReport(report, cfg);
+  const report: LoopReport = {
+    runId, workflow: o.name, outcome: result.outcome, detail: result.detail, ms: Date.now() - started, steps, finalGates, finalGatesSkipped,
+    lastReview, sessionDir, reportFile, markdown: '',
+  };
+  report.markdown = renderReport(report);
   writeFileSync(reportFile, report.markdown);
   emit({ kind: 'done', report });
   return report;

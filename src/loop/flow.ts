@@ -27,9 +27,13 @@ Rules:
 - A node runs after the node listed before it; "after": ["x", "y"] waits for those instead (earlier nodes in the
   same list only), and "after": [] starts at once. Nodes that don't wait for each other run in parallel.
 - "agent": "implementer" (${cfg.implementer.model}), "reviewer" (${cfg.reviewer.model}), "main"
-  (${mainModel ?? 'this conversation\'s model'}), or another pi model pattern only if the user names one.
+  (${mainModel ?? 'this conversation\'s model'}), or another model only if the user names one: its exact
+  "provider/id" as \`pi --list-models\` shows it, optionally with ":off", ":low" etc. for thinking. Don't guess a
+  provider; flow_run refuses a name pi doesn't have and suggests the right ones.
 - "workspace": "repo" changes the real repository (one writer at a time); "copy" is a throwaway copy (reviewers,
-  read-only work); "own" is a private copy whose changes become a patch, for parallel attempts.
+  read-only work); "own" is a private copy whose changes become a patch, for parallel attempts at code changes.
+- A step that only writes text (a story, an answer, a summary, a review) changes no files: use "copy", pass its
+  text on with {id}, and ask for the text itself in the reply. The user sees the last step's reply.
 - Prompts can use {task} (the task below), {id} (a step's last output) and {id.patch} (an own step's patch file).
 - A reviewer must end with a VERDICT line; a repeat "until": "clean" needs one, and stops when it passes.
 - "checks": "gates" runs the project's tests (${cfg.gates.join(' && ') || 'none configured'}).
