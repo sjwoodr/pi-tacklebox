@@ -19,7 +19,9 @@ would hit; minor = style, naming, small gaps.`;
 
 export function parseVerdict(text: string): Verdict {
   const counts: Record<Severity, number> = { critical: 0, high: 0, minor: 0 };
-  for (const m of text.matchAll(/\[(critical|high|minor)\]/gi)) counts[m[1].toLowerCase() as Severity]++;
+  // Only a tag that starts a finding counts (after list markers, bold, a quote or a table pipe): "No remaining
+  // [high] or [minor] errors were found" in a PASS is prose, not two findings.
+  for (const m of text.matchAll(/^[ \t>#*_|+•-]*(?:\d+[.)][ \t]*)?[*_`]*\[(critical|high|minor)\]/gim)) counts[m[1].toLowerCase() as Severity]++;
   const lines = [...text.matchAll(/^\s*\**\s*VERDICT\s*:\s*\**\s*(PASS|CHANGES)\b/gim)];
   const verdict = lines.length ? (lines[lines.length - 1][1].toUpperCase() as 'PASS' | 'CHANGES') : 'NONE';
   return { verdict, counts };

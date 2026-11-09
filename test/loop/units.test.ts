@@ -22,6 +22,12 @@ test('verdict: a PASS with a critical or high finding is not clean', () => {
   assert.ok(isClean(parseVerdict('[minor] nit\nVERDICT: PASS')));
   assert.ok(!isClean(parseVerdict('[high] bug\nVERDICT: PASS')));
   assert.ok(!isClean(parseVerdict('nothing to add')));
+  // Gemma's real round-2 PASS: the tags named in prose are not findings.
+  const gemma = parseVerdict('All previous errors are fixed.\n\nNo remaining [high] or [minor] errors were found.\n\nVERDICT: PASS');
+  assert.deepEqual(gemma.counts, { critical: 0, high: 0, minor: 0 });
+  assert.ok(isClean(gemma));
+  const marked = parseVerdict('- **[high]** a\n* [minor] b\n  2) [critical] c\n| [high] | d |\n> [minor] e\nVERDICT: CHANGES');
+  assert.deepEqual(marked.counts, { critical: 1, high: 2, minor: 2 }, 'list markers, bold, numbering, tables and quotes still count');
 });
 
 test('config: the loop section of tacklebox.json and /loop options merge per role; mistakes are errors', () => {
