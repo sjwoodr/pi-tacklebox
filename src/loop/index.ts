@@ -7,7 +7,8 @@
  * /flow <description>: the conversation's model drafts a workflow and calls flow_run, which checks it and asks the
  * user to run, edit or cancel it; then code runs it like /loop. /flow save NAME keeps the last one that ran.
  *
- * Quitting pi stops a running loop too.
+ * The flow_run tool is offered to the model only while a /flow is being planned, so other requests don't carry it.
+ * Quitting pi stops a running loop too. Inside a loop step's own pi process the extension does nothing.
  */
 import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
@@ -18,6 +19,7 @@ import { parseWorkflow, plannerPrompt, saveWorkflow } from './flow.ts';
 import { type LoopEvent, type LoopReport, runLoop, workflows } from './loop.ts';
 import { describeEvent, describeProgress } from './progress.ts';
 import { type LoopConfig, loopConfig, loopEnabled } from './settings.ts';
+import { STEP_ENV } from './step.ts';
 import { describeConfig, describeWorkflows, SUBCOMMANDS, subcommandOf } from './show-config.ts';
 import { BUILT_IN, type KnownModel, type Workflow, checkModels, describeWorkflow, runWorkflow, validateWorkflow } from './workflow.ts';
 
@@ -50,7 +52,7 @@ const NEEDS_MODELS =
 
 export default function (pi: ExtensionAPI) {
   // Off by default: it runs other models for many minutes and needs them named in tacklebox.json.
-  if (!loopEnabled()) return;
+  if (!loopEnabled() || process.env[STEP_ENV]) return;
   let running: LoopState | undefined;
   let ui: ExtensionContext | undefined;
   /** The last workflow /flow ran, for /flow save. */
@@ -65,6 +67,13 @@ export default function (pi: ExtensionAPI) {
     if (!ui?.hasUI) return;
     ui.ui.setStatus('pi-loop', undefined);
     ui.ui.setWidget('pi-loop', undefined);
+  };
+  /** flow_run is hidden until /flow asks for a plan, and hidden again when that reply ends. */
+  const offerFlowTool = (on: boolean) => {
+    const active = pi.getActiveTools?.();
+    if (!active) return;
+    if (on && !active.includes('flow_run')) pi.setActiveTools([...active, 'flow_run']);
+    if (!on && active.includes('flow_run')) pi.setActiveTools(active.filter((t) => t !== 'flow_run'));
   };
   const say = (ctx: ExtensionContext, err: unknown) => ctx.ui.notify(err instanceof Error ? err.message : String(err), 'error');
 
@@ -175,8 +184,10 @@ export default function (pi: ExtensionAPI) {
       }
       if (!args.trim()) return ctx.ui.notify('/flow <what you want done, by which models, in what order> | /flow save NAME', 'info');
       if (running) return ctx.ui.notify('A loop is already running: /loop status, or /loop stop to stop it.', 'warning');
+      if (!ctx.isIdle()) return ctx.ui.notify('Wait for the current reply to finish, then /flow again.', 'warning');
       const config = configOrSay(ctx);
       if (!config) return;
+      offerFlowTool(true);
       pi.sendUserMessage(plannerPrompt(args.trim(), config, mainModelOf(ctx)));
     },
   });
@@ -240,6 +251,9 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand('loop-status', { description: 'Show the running loop (same as /loop status)', handler: async (_a, ctx) => status(ctx) });
   pi.registerCommand('loop-stop', { description: 'Stop the running loop (same as /loop stop)', handler: async (_a, ctx) => stop(ctx) });
+
+  pi.on('session_start', async () => offerFlowTool(false));
+  pi.on('agent_end', async () => offerFlowTool(false));
 
   pi.on('session_shutdown', async () => {
     running?.controller.abort();

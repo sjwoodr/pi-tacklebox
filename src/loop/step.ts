@@ -21,6 +21,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { StepLimits } from './settings.ts';
 
+/** Set in every step's pi process, so the loop extension doesn't load itself inside its own steps. */
+export const STEP_ENV = 'PI_TACKLEBOX_LOOP_STEP';
+
 export interface StepOptions {
   /** Shown in pi's session list. */
   name: string;
@@ -135,7 +138,7 @@ export function runStep(o: StepOptions): Promise<StepResult> {
   return new Promise((resolve) => {
     // PI_OFFLINE stops pi's own startup network work (model catalog refresh); model requests still go out.
     const proc = spawn(cmd, [...pre, ...piArgs(o, promptFile)], {
-      cwd: o.cwd, detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PI_OFFLINE: '1' },
+      cwd: o.cwd, detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PI_OFFLINE: '1', [STEP_ENV]: '1' },
     });
     let buffer = '';
     let requestStart = 0;

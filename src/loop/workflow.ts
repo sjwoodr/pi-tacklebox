@@ -239,6 +239,10 @@ export function checkModels(workflow: Workflow, cfg: LoopConfig, mainModel: stri
   const errors: string[] = [];
   const seen = new Set<string>();
   const check = (where: string, pattern: string) => {
+    if (!pattern) {
+      if (where === 'implementer' || where === 'reviewer') errors.push(`${where}: no model set (loop.${where}.model in tacklebox.json); name a model in the step instead`);
+      return;
+    }
     const p = withoutThinking(pattern);
     if (seen.has(p)) return;
     seen.add(p);

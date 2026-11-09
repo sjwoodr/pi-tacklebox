@@ -9,6 +9,7 @@ import { describeConfig, subcommandOf } from '../../src/loop/show-config.ts';
 import { defaults, loopConfig } from '../../src/loop/settings.ts';
 import { makeReviewCopy, workFingerprint } from '../../src/loop/review-copy.ts';
 import { isClean, parseVerdict } from '../../src/loop/verdict.ts';
+import { STEP_ENV } from '../../src/loop/step.ts';
 import { gitRepo } from './helpers.ts';
 
 test('verdict: the last VERDICT line wins, findings are counted by tag', () => {
@@ -112,7 +113,7 @@ test('config description: models (or a reminder to set them), limits, rounds and
   assert.match(describeConfig(loopConfig({}, join(dir, 'none')), join(dir, 'none', 'tacklebox.json')), /not found: defaults/);
 });
 
-test('the extension registers nothing until tacklebox.json turns the loop on', async () => {
+test('the extension is on by default, off when tacklebox.json says so, and absent inside a loop step', async () => {
   const { default: loop } = await import('../../src/loop/index.ts');
   const load = (config?: object) => {
     const dir = mkdtempSync(join(tmpdir(), 'tacklebox-loop-ext-'));
@@ -128,9 +129,20 @@ test('the extension registers nothing until tacklebox.json turns the loop on', a
     }
     return commands;
   };
-  assert.deepEqual(load(), []);
-  assert.deepEqual(load({ loop: { enabled: false } }), []);
-  assert.deepEqual(load({ loop: { enabled: true } }), ['loop', 'flow', 'tool:flow_run', 'loop-status', 'loop-stop']);
+  const all = ['loop', 'flow', 'tool:flow_run', 'loop-status', 'loop-stop'];
+  // A step's pi passes STEP_ENV to what it runs (this suite, when a loop works on tacklebox): clear it here.
+  const step = process.env[STEP_ENV];
+  delete process.env[STEP_ENV];
+  try {
+    assert.deepEqual(load(), all, 'on by default: no tacklebox.json');
+    assert.deepEqual(load({ loop: { enabled: false } }), []);
+    assert.deepEqual(load({ loop: { enabled: true } }), all);
+    process.env[STEP_ENV] = '1';
+    assert.deepEqual(load(), [], 'nothing registers inside a loop step\'s own pi');
+  } finally {
+    if (step === undefined) delete process.env[STEP_ENV];
+    else process.env[STEP_ENV] = step;
+  }
   assert.equal(subcommandOf('workflows'), 'workflows');
 });
 

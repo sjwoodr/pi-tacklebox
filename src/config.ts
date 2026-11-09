@@ -70,7 +70,7 @@ export const DEFAULTS: Config = {
   sessionSearch: { enabled: true, allowNonLocal: false },
   // Off: it runs other models for many minutes and needs them named (implementer.model, reviewer.model).
   loop: {
-    enabled: false,
+    enabled: true,
     implementer: { model: '', tools: [], maxTurns: 40, maxMinutes: 15 },
     reviewer: { model: '', tools: ['read', 'grep', 'find', 'ls', 'bash'], maxTurns: 45, maxMinutes: 12 },
     wrapUpMinutes: 6,

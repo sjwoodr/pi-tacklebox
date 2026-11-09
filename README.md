@@ -14,7 +14,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | jobs | `job_start`, `job_status` and `job_kill` tools: a long command (watching a deploy or CI run, a build, a dev server) runs in the background, and its exit code and last lines reach the model as a message when it ends, starting a turn if pi is idle. A bash call that would block for minutes (`gh run watch`, `kubectl rollout status`, `tail -f`, a polling loop, a long `sleep`) is refused with a pointer to `job_start` | on |
 | bang | `!command` gets an answer straight away: the model reads the output and responds, with no need to send another message. `!!command` stays private | on |
 | session-search | `session_search` tool and `/recall <regex>` command: search past pi sessions for what you said and the commands that ran, newest first. Tool output, thinking, replies and `!!` commands are never searched or shown. Refuses to run on a model that isn't local (cloud models behind local Ollama count as remote), unless `allowNonLocal` is set | on |
-| loop | `/loop <task>`: one model implements, another reviews a throwaway copy, the first fixes, until the review passes, with turn and time limits on every step and the project's tests run between steps. Other workflows (parallel steps, own workspaces, checks, repeats) can be named in tacklebox.json, or drafted for one run with `/flow <what you want>` and approved before they run. [docs/loop.md](docs/loop.md) | off (needs the models named) |
+| loop | `/loop <task>`: one model implements, another reviews a throwaway copy, the first fixes, until the review passes, with turn and time limits on every step and the project's tests run between steps. Other workflows (parallel steps, own workspaces, checks, repeats) can be named in tacklebox.json, or drafted for one run with `/flow <what you want>` and approved before they run. [docs/loop.md](docs/loop.md) | on (`/loop` needs its two models named) |
 
 ## Install
 
@@ -47,7 +47,7 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 },
   "bang": { "enabled": true },
   "sessionSearch": { "enabled": true, "allowNonLocal": false },
-  "loop": { "enabled": false }
+  "loop": { "enabled": true }
 }
 ```
 
@@ -71,8 +71,9 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   `enabled` to `false` to get pi's own behavior back. A `!` run while the model is busy waits for your
   next message, as it does without this.
 
-- `loop`: off until you name the two models (`loop.implementer.model`, `loop.reviewer.model`) and set
-  `enabled`; limits, rounds, checks and time all have defaults. See [docs/loop.md](docs/loop.md).
+- `loop`: `/flow` works as is, since each workflow names its models. `/loop` (the built-in review loop) also
+  needs `loop.implementer.model` and `loop.reviewer.model`; limits, rounds, checks and time all have
+  defaults. `enabled: false` removes both commands. See [docs/loop.md](docs/loop.md).
 
 think-budget's rules go in a `thinkBudget` section of the same file, or, without one, in the older
 `think-budget.json`: see [docs/think-budget.md](docs/think-budget.md).

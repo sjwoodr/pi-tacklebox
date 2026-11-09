@@ -178,4 +178,6 @@ test('model names must match one pi model exactly; near misses get suggestions',
   assert.match(errs(['gemma4:latest'])[0], /more than one provider; name one: ollama\/gemma4:latest, other\/gemma4:latest/);
   assert.deepEqual(errs(['main']), [], 'no main model: validation reports that, not this');
   assert.match(errs(['main'], 'nope/x')[0], /main: pi has no model "nope\/x"/);
+  const unset = testConfig('/tmp', { implementer: { model: '', tools: [], maxTurns: 1, maxMinutes: 1 } });
+  assert.match(checkModels({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }] }, unset, undefined, known)[0], /implementer: no model set \(loop\.implementer\.model in tacklebox\.json\)/);
 });

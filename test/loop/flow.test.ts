@@ -50,6 +50,8 @@ test('flow_run: problems go back to the model; the user can edit, then cancel, a
   writeFileSync(join(dir, 'tacklebox.json'), JSON.stringify({ loop: { enabled: true, implementer: { model: 'a/b' }, reviewer: { model: 'c/d' } } }));
   const before = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
+  const step = process.env.PI_TACKLEBOX_LOOP_STEP;
+  delete process.env.PI_TACKLEBOX_LOOP_STEP;
   try {
     const { default: loop } = await import('../../src/loop/index.ts');
     const tools: Record<string, any> = {};
@@ -76,7 +78,46 @@ test('flow_run: problems go back to the model; the user can edit, then cancel, a
     assert.match(shown[0], /only: implementer \(a\/b\)/);
     assert.match(shown[1], /\{task\} carefully/);
   } finally {
+    if (step !== undefined) process.env.PI_TACKLEBOX_LOOP_STEP = step;
     if (before === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = before;
+  }
+});
+
+test('flow_run is offered to the model only from /flow until that reply ends', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-flow-tool-'));
+  writeFileSync(join(dir, 'tacklebox.json'), JSON.stringify({ loop: { enabled: true } }));
+  const before = process.env.PI_CODING_AGENT_DIR;
+  const step = process.env.PI_TACKLEBOX_LOOP_STEP;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  delete process.env.PI_TACKLEBOX_LOOP_STEP;
+  try {
+    const { default: loop } = await import('../../src/loop/index.ts');
+    let active = ['read', 'bash', 'flow_run'];
+    const commands: Record<string, any> = {};
+    const handlers: Record<string, () => Promise<void>> = {};
+    const sent: string[] = [];
+    loop({
+      registerCommand: (name: string, c: any) => (commands[name] = c), registerTool: () => {},
+      on: (event: string, h: () => Promise<void>) => (handlers[event] = h), sendMessage: () => {},
+      sendUserMessage: (m: string) => sent.push(m),
+      getActiveTools: () => [...active], setActiveTools: (t: string[]) => (active = t),
+    } as never);
+    const notes: string[] = [];
+    const ctx = (idle: boolean) => ({ cwd: dir, model: { provider: 'ollama', id: 'gemma4' }, isIdle: () => idle, ui: { notify: (m: string) => notes.push(m) } });
+    await handlers.session_start();
+    assert.deepEqual(active, ['read', 'bash'], 'hidden at session start');
+    await commands.flow.handler('two models argue about French', ctx(false));
+    assert.deepEqual(active, ['read', 'bash'], 'not while another reply runs');
+    assert.match(notes.at(-1)!, /Wait for the current reply/);
+    await commands.flow.handler('two models argue about French', ctx(true));
+    assert.deepEqual(active, ['read', 'bash', 'flow_run'], 'offered for the planning reply');
+    assert.equal(sent.length, 1);
+    await handlers.agent_end();
+    assert.deepEqual(active, ['read', 'bash'], 'hidden again when it ends');
+  } finally {
+    if (before === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = before;
+    if (step !== undefined) process.env.PI_TACKLEBOX_LOOP_STEP = step;
   }
 });

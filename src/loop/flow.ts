@@ -42,7 +42,7 @@ Rules:
 - ids: lowercase letters, digits and dashes, unique.
 - A node runs after the node listed before it; "after": ["x", "y"] waits for those instead (earlier nodes in the
   same list only), and "after": [] starts at once. Nodes that don't wait for each other run in parallel.
-- "agent": "implementer" (${cfg.implementer.model}), "reviewer" (${cfg.reviewer.model}), "main"
+- "agent": "implementer" (${cfg.implementer.model || 'not set: don\'t use it'}), "reviewer" (${cfg.reviewer.model || 'not set: don\'t use it'}), "main"
   (${mainModel ?? 'this conversation\'s model'}), or another model only if the user names one: its exact
   "provider/id" as \`pi --list-models\` shows it, optionally with ":off", ":low" etc. for thinking. Don't guess a
   provider; flow_run refuses a name pi doesn't have and suggests the right ones.

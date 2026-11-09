@@ -44,7 +44,9 @@ The loop is only as good as its reviewer: a gap the reviewer misses is never fix
 
 ## Configure
 
-Off by default. In `tacklebox.json`, the models are required; everything else has a default:
+On by default. `/flow` needs nothing else, since each workflow names its own models. `/loop`'s built-in review
+loop needs the two models named in `tacklebox.json`; everything else has a default (`"enabled": false` turns
+both commands off):
 
 ```json
 "loop": {
@@ -129,5 +131,7 @@ happened, not the model.
 For example: `/flow beam and qwen each try this in their own copy, at the same time; then you compare the two
 patches and tell me which is better: add a --dry-run flag to the deploy script`.
 
-The `flow_run` tool is offered to the model in every session while the loop is on (its description asks it to
-be used only after `/flow`), so its definition is part of every request.
+The `flow_run` tool is offered to the model only while `/flow` is being planned: it is hidden when a session
+starts, added when you type `/flow`, and hidden again when that reply ends, so other requests don't carry it.
+Each step's own pi process skips the loop extension entirely (the loop marks it with `PI_TACKLEBOX_LOOP_STEP`),
+so a step can't start a loop of its own.
