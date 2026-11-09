@@ -108,7 +108,9 @@ and stop at the verdict).
   or what a checks node printed: its start and end when over 30,000 characters), `{id.file}` (the file that
   output was saved in, `<id>-r<round>.md` or `.txt` in the run folder: a step whose context gets compacted can
   read it again), `{id.patch}`.
-- **Steps that must deliver:** `verdict: true` (default for reviewers) means a VERDICT line is required: none,
+- **Steps that must deliver:** a step that ends without writing an answer (all thinking, or cut off at its output
+  limit) is asked once more for it; still empty, it stops the run when a later step uses its output, rather than
+  hand that step nothing. `verdict: true` (default for reviewers) means a VERDICT line is required: none,
   even when asked again, stops the run; a clean one ends the surrounding `repeat`. `progress: true` means the
   step must change the repo, or the run stops with "no progress".
 - **`checks`:** `"gates"` (the configured commands) or a list; `onFail: { "fix": "<agent node>", "times": N }`
@@ -117,6 +119,9 @@ and stop at the verdict).
   command. So a setup that later steps rely on (`setup.sh {task}`) is a checks node with `stopOnFail`, not an
   agent asked to run it: code runs it exactly, and its output reaches the others as `{setup}`.
 - **`repeat`:** `{ "id", "repeat": [...], "until": "clean", "max": N }` (default `maxRounds`).
+
+A workflow that changes no code (a review, a text) can say `"gates": false` next to its `nodes`: the final checks
+don't run, as with `--no-gates`, and a `checks: "gates"` step in it is refused.
 
 Every agent step gets the same limits, steers, sessions and speeds as the loop. A workflow in tacklebox.json is
 checked when the loop loads, and a mistake is named (`loop.workflows.two-tries: "b": after "x", which isn't an

@@ -32,7 +32,8 @@ any other tool: a program runs the workflow, with limits on every step, after th
 What the user wants:
 ${description}
 
-A workflow is JSON: { "description": "...", "nodes": [ ... ] }. Each node is one of:
+A workflow is JSON: { "description": "...", "nodes": [ ... ] }, with "gates": false added when it changes no code
+(a text, a review, research), so the project's tests don't run at the end. Each node is one of:
 - an agent step: { "id": "a", "agent": "...", "prompt": "...", "workspace": "repo"|"copy"|"own", "after": [...] },
   optionally with "verdict": true, "role": "implementer"|"reviewer"|"helper", "label": "...", "maxTurns": N, "maxMinutes": N
 - checks: { "id": "c", "checks": "gates" | ["shell command", ...], "onFail": { "fix": "<agent step id>" }, "stopOnFail": true }

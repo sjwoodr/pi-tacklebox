@@ -24,7 +24,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type GateResult, runGates } from './gates.ts';
-import { HELPER_ROLE, IMPLEMENTER_ROLE, REVIEWER_ROLE, VERDICT_ASK, WARNING, WRAP_UP_INSIST, gateFixPrompt } from './prompts.ts';
+import { ANSWER_ASK, HELPER_ROLE, IMPLEMENTER_ROLE, REVIEWER_ROLE, VERDICT_ASK, WARNING, WRAP_UP_INSIST, gateFixPrompt } from './prompts.ts';
 import { type LoopEvent, type LoopReport, type Outcome, type Role, type StepRecord, renderReport, withoutThinking } from './report.ts';
 import { makeReviewCopy, workFingerprint } from './review-copy.ts';
 import type { LoopConfig, RoleConfig } from './settings.ts';
@@ -81,6 +81,8 @@ export type WorkflowNode = AgentNode | ChecksNode | RepeatNode;
 
 export interface Workflow {
   description?: string;
+  /** false: this workflow never runs the project's checks (a review, a text): no final checks, as --no-gates. */
+  gates?: boolean;
   nodes: WorkflowNode[];
 }
 
@@ -151,6 +153,9 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
     }
   };
   collect(w.nodes, 'nodes');
+  if (w.gates !== undefined && typeof w.gates !== 'boolean') errors.push('"gates" must be true or false');
+  else if (w.gates === false)
+    for (const n of all.values()) if (isChecks(n) && n.checks === 'gates') errors.push(`"${n.id}": "checks": "gates" in a workflow with "gates": false; list its commands instead`);
   const vars = (s: string) => [...s.matchAll(VAR)];
   const check = (nodes: WorkflowNode[], scope: string[]) => {
     const seen: string[] = [];
@@ -220,6 +225,7 @@ export function describeWorkflow(w: Workflow, cfg: LoopConfig, mainModel?: strin
     });
   };
   walk(w.nodes, '');
+  if (w.gates === false) lines.push('(no final checks: the workflow has "gates": false)');
   return lines.join('\n');
 }
 
@@ -311,6 +317,10 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
   const nodesById = new Map<string, WorkflowNode>();
   const index = (nodes: WorkflowNode[]) => nodes.forEach((n) => { nodesById.set(n.id, n); if (isRepeat(n)) index(n.repeat); });
   index(o.workflow.nodes);
+  /** Nodes whose output another step's prompt uses ({id} or {id.file}). */
+  const usedLater = new Set<string>();
+  for (const n of nodesById.values())
+    if (isAgent(n)) for (const [, name, suffix] of n.prompt.matchAll(VAR)) if (suffix !== '.patch' && name !== n.id) usedLater.add(name);
   let lastReview: string | undefined;
   /** Whether any step worked in the real repo; if none did, there is nothing for the final checks to check. */
   let touchedRepo = false;
@@ -382,7 +392,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
         warning: WARNING(role),
         finalAsk: WRAP_UP_INSIST(role),
         askMinutes: cfg.wrapUpMinutes,
-        followUpFor: (text) => (wantsVerdict && parseVerdict(text).verdict === 'NONE' ? VERDICT_ASK : undefined),
+        followUpFor: (text) => (!text.trim() ? ANSWER_ASK : wantsVerdict && parseVerdict(text).verdict === 'NONE' ? VERDICT_ASK : undefined),
         onProgress: (progress) => emit({ kind: 'step-progress', step: { n: stepN, id: n.id, round, role, kind, label }, progress }),
       });
     let main;
@@ -435,6 +445,9 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     if (aborted()) return outOfTime();
     if (main.stoppedBy === 'startup') return { kind: 'stop', outcome: 'error', detail: `${label}: pi didn't start, twice` };
     if (record.error) return { kind: 'stop', outcome: 'error', detail: `${label} didn't run: ${record.error}` };
+    // A later step built on an empty answer only makes something up: stop instead.
+    if (!record.text.trim() && usedLater.has(n.id))
+      return { kind: 'stop', outcome: 'error', detail: `${label} gave no answer, even when asked again, and later steps use it` };
     if (before !== undefined && workFingerprint(o.cwd) === before)
       return { kind: 'stop', outcome: 'no progress', detail: `round ${round}: ${label} changed nothing` };
     if (record.verdict) {
@@ -533,7 +546,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     result = { outcome: 'error', detail: err instanceof Error ? err.message : String(err) };
   }
 
-  const finalGatesSkipped = aborted() ? 'stopped' : !touchedRepo ? 'no step worked in the repo' : undefined;
+  const finalGatesSkipped = aborted() ? 'stopped' : o.workflow.gates === false ? 'the workflow has "gates": false' : !touchedRepo ? 'no step worked in the repo' : undefined;
   const finalGates = finalGatesSkipped ? [] : await runGates(cfg.gates, o.cwd, cfg.gateTimeoutMinutes * 60_000);
   const reportFile = join(sessionDir, 'report.md');
   const report: LoopReport = {

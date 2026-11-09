@@ -25,6 +25,9 @@ test('validation names each problem', () => {
   assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'c', checks: ['echo {a}'] }] }), /a command can't use \{a\}: only \{task\} and \{round\}/);
   assert.match(errs({ nodes: [{ id: 'c', checks: ['true'] }, { id: 'a', agent: 'implementer', prompt: '{c.patch}' }] }), /\{c\.patch\} needs "c" to be an agent node with "workspace": "own"/);
   assert.match(errs({ nodes: [{ id: 'c', checks: ['true'], stopOnFail: 'yes' }] }), /"stopOnFail" must be true or false/);
+  assert.equal(errs({ gates: false, nodes: [{ id: 'c', checks: ['true'] }] }), '');
+  assert.match(errs({ gates: 'no', nodes: [{ id: 'c', checks: ['true'] }] }), /"gates" must be true or false/);
+  assert.match(errs({ gates: false, nodes: [{ id: 'r', until: 'clean', max: 2, repeat: [{ id: 'v', agent: 'reviewer', prompt: 'x' }, { id: 'c', checks: 'gates' }] }] }), /"c": "checks": "gates" in a workflow with "gates": false/);
 });
 
 test('nodes with no dependency between them run at the same time; a later node gets both outputs', async () => {
@@ -112,6 +115,34 @@ test('a check that cannot start fails as a check instead of ending the run', asy
   const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: join(dir, 'no-such-dir'), config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
   assert.equal(r.outcome, 'error');
   assert.match(r.detail, /setup: `true` failed \(exit null\): could not run it: spawn bash ENOENT/);
+});
+
+test('"gates": false skips the final checks even when a step worked in the repo', async () => {
+  const { dir } = fakePi({ implementer: { turns: 1 } });
+  const wf: Workflow = { gates: false, nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }] };
+  const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs'), { gates: ['false'] }), piCommand: FAKE_PI });
+  assert.equal(r.outcome, 'finished');
+  assert.deepEqual(r.finalGates, [], 'gates: ["false"] would have failed if run');
+  assert.match(r.markdown, /not run \(the workflow has "gates": false\)/);
+});
+
+test('a step that ends with no answer is asked once more; still empty, and used later, it stops the run', async () => {
+  const wf: Workflow = { nodes: [
+    { id: 'a', agent: 'implementer', prompt: 'look', workspace: 'copy' },
+    { id: 'b', agent: 'implementer', prompt: 'use {a}', workspace: 'copy' },
+  ] };
+  // Asked again, it answers: the run goes on with that answer.
+  const ok = fakePi({ implementer: { turns: 1, texts: [''] }, wrapUp: { texts: ['the answer'] } });
+  const r1 = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(ok.dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
+  assert.equal(r1.steps[0].text, 'the answer');
+  assert.ok(log(ok.log).some((e) => e.cmd === 'prompt' && /You ended without writing an answer/.test(e.message)));
+  assert.ok(log(ok.log).some((e) => e.cmd === 'prompt' && e.message === 'use the answer'));
+  // Asked again, still nothing: the run stops before b.
+  const bad = fakePi({ implementer: { turns: 1, texts: [''] }, wrapUp: { texts: [''] } });
+  const r2 = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(bad.dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
+  assert.equal(r2.outcome, 'error');
+  assert.match(r2.detail, /^a gave no answer, even when asked again, and later steps use it$/);
+  assert.equal(r2.steps.length, 1);
 });
 
 test('"main" runs on the conversation model', async () => {

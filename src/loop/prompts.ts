@@ -70,6 +70,11 @@ export const WARNING = (role: string) =>
   (role === 'reviewer' ? `, with every finding tagged and the VERDICT line last.` : '.');
 
 /** Asked when a reviewer finished on its own without a VERDICT line. */
+/** For a step that ended without writing an answer (all its output was thinking, or cut off). */
+export const ANSWER_ASK =
+  `You ended without writing an answer. Without calling any tools, write your answer now from what you have ` +
+  `found so far, in the form your task asked for.`;
+
 export const VERDICT_ASK =
   `Your report has no VERDICT line. Without calling any tools, reply with your findings, each starting with ` +
   `[critical], [high] or [minor], and end with VERDICT: PASS or VERDICT: CHANGES.`;
