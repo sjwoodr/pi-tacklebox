@@ -104,13 +104,18 @@ and stop at the verdict).
   private copy whose changes are kept as a patch for later steps, `{id.patch}`; the repo is left alone). A copy
   starts with the repo's uncommitted work; an `own` patch holds only what the step changed on top of that (none
   if it changed nothing). A step that only writes text (a story, an answer) needs `copy`, not `own`.
-- **Prompts:** `{task}`, `{round}`, `{again}` (a note for later review rounds), `{id}` (a step's last output),
-  `{id.patch}`.
+- **Prompts:** `{task}`, `{round}`, `{again}` (a note for later review rounds), `{id}` (a step's last output,
+  or what a checks node printed: its start and end when over 30,000 characters), `{id.file}` (the file that
+  output was saved in, `<id>-r<round>.md` or `.txt` in the run folder: a step whose context gets compacted can
+  read it again), `{id.patch}`.
 - **Steps that must deliver:** `verdict: true` (default for reviewers) means a VERDICT line is required: none,
   even when asked again, stops the run; a clean one ends the surrounding `repeat`. `progress: true` means the
   step must change the repo, or the run stops with "no progress".
 - **`checks`:** `"gates"` (the configured commands) or a list; `onFail: { "fix": "<agent node>", "times": N }`
-  sends failures back to that step.
+  sends failures back to that step, and `stopOnFail: true` stops the run if they still fail. A command can use
+  `{task}` and `{round}`, each passed as one shell-quoted word, and nothing else: no model's output is put into a
+  command. So a setup that later steps rely on (`setup.sh {task}`) is a checks node with `stopOnFail`, not an
+  agent asked to run it: code runs it exactly, and its output reaches the others as `{setup}`.
 - **`repeat`:** `{ "id", "repeat": [...], "until": "clean", "max": N }` (default `maxRounds`).
 
 Every agent step gets the same limits, steers, sessions and speeds as the loop. A workflow in tacklebox.json is

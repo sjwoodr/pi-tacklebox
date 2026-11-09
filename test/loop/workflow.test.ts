@@ -14,12 +14,17 @@ test('validation names each problem', () => {
   assert.match(errs({ nodes: [{ id: 'a', agent: 'wizard', prompt: 'x' }] }), /agent "wizard" is not a role/);
   assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x', after: ['b'] }, { id: 'b', agent: 'implementer', prompt: 'y' }] }), /after "b", which isn't an earlier node/);
   assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'a', agent: 'implementer', prompt: 'y' }] }), /duplicate id "a"/);
-  assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'use {zz}' }] }), /no agent node "zz"/);
-  assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'b', agent: 'implementer', prompt: '{a.patch}' }] }), /needs "a" to have "workspace": "own"/);
+  assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'use {zz}' }] }), /no agent or checks node "zz"/);
+  assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'b', agent: 'implementer', prompt: '{a.patch}' }] }), /needs "a" to be an agent node with "workspace": "own"/);
   assert.match(errs({ nodes: [{ id: 'r', until: 'clean', repeat: [{ id: 'a', agent: 'implementer', prompt: 'x' }] }] }), /needs a step with a verdict: give the checking step "verdict": true/);
   assert.match(errs({ nodes: [{ id: 'a', agent: 'main', prompt: 'x' }] }), /"main" needs a main model/);
   assert.equal(errs({ nodes: [{ id: 'a', agent: 'main', prompt: 'x' }] }, true), '');
   assert.match(errs({ nodes: [{ id: 'a', checks: 'gates', onFail: { fix: 'nope' } }] }), /onFail.fix "nope" is not an agent node/);
+  // A checks node's output and any node's saved file are variables; a command takes only {task} and {round}.
+  assert.equal(errs({ nodes: [{ id: 'c', checks: ['echo {task} {round} ${HOME} {print}'] }, { id: 'a', agent: 'implementer', prompt: '{c} {c.file} {a.file}' }] }), '');
+  assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'c', checks: ['echo {a}'] }] }), /a command can't use \{a\}: only \{task\} and \{round\}/);
+  assert.match(errs({ nodes: [{ id: 'c', checks: ['true'] }, { id: 'a', agent: 'implementer', prompt: '{c.patch}' }] }), /\{c\.patch\} needs "c" to be an agent node with "workspace": "own"/);
+  assert.match(errs({ nodes: [{ id: 'c', checks: ['true'], stopOnFail: 'yes' }] }), /"stopOnFail" must be true or false/);
 });
 
 test('nodes with no dependency between them run at the same time; a later node gets both outputs', async () => {
@@ -67,6 +72,46 @@ test('checks with their own commands; a failure goes to the named step', async (
   const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
   assert.deepEqual(r.steps.map((s) => s.label), ['build', 'fix failed checks']);
   assert.equal(r.steps[1].gates?.[0].ok, true);
+});
+
+test('a checks step can set up for the rest: {task} goes in quoted, its output and file come out as {id} and {id.file}', async () => {
+  const { dir, log: file } = fakePi({ implementer: { turns: 1, texts: ['read it'] } });
+  const task = "it's $(touch pwned) `id` ; done";
+  const wf: Workflow = { nodes: [
+    { id: 'setup', checks: ['printf "got[%s] round %s\\n" {task} {round}'], stopOnFail: true },
+    { id: 'use', agent: 'implementer', prompt: 'SETUP:{setup}FILE:{setup.file}', workspace: 'copy' },
+    { id: 'after', agent: 'implementer', prompt: 'prev at {use.file}', workspace: 'copy' },
+  ] };
+  const cwd = gitRepo();
+  const r = await runWorkflow({ workflow: wf, name: 'test', task, cwd, config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
+  assert.equal(r.outcome, 'finished');
+  assert.ok(!existsSync(join(cwd, 'pwned')), 'the task is one quoted word, never run');
+  const prompts = log(file).filter((e) => e.cmd === 'prompt').map((e) => e.message as string);
+  const setupFile = join(r.sessionDir, 'setup-r0.txt');
+  assert.equal(readFileSync(setupFile, 'utf8'), `got[${task}] round 0\n`);
+  assert.ok(prompts.includes(`SETUP:got[${task}] round 0\nFILE:${setupFile}`), prompts.join(' | '));
+  assert.ok(prompts.includes(`prev at ${r.steps[0].outputFile}`));
+});
+
+test('stopOnFail: a failed setup stops the run before any later step', async () => {
+  const { dir, log: file } = fakePi({ implementer: { turns: 1 } });
+  const wf: Workflow = { nodes: [
+    { id: 'setup', checks: ['echo "merge conflicts" >&2; exit 4'], stopOnFail: true },
+    { id: 'use', agent: 'implementer', prompt: 'x {setup}' },
+  ] };
+  const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
+  assert.equal(r.outcome, 'error');
+  assert.match(r.detail, /setup: `echo "merge conflicts" >&2; exit 4` failed \(exit 4\): merge conflicts/);
+  assert.equal(r.steps.length, 0);
+  assert.ok(!existsSync(file) || !log(file).some((e) => e.cmd === 'start'), 'no pi was started');
+});
+
+test('a check that cannot start fails as a check instead of ending the run', async () => {
+  const { dir } = fakePi({ implementer: { turns: 1 } });
+  const wf: Workflow = { nodes: [{ id: 'setup', checks: ['true'], stopOnFail: true }] };
+  const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: join(dir, 'no-such-dir'), config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI });
+  assert.equal(r.outcome, 'error');
+  assert.match(r.detail, /setup: `true` failed \(exit null\): could not run it: spawn bash ENOENT/);
 });
 
 test('"main" runs on the conversation model', async () => {

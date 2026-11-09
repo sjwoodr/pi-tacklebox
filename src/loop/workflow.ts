@@ -12,7 +12,9 @@
  * A node runs after the node listed before it, unless `after` names others (only earlier nodes in the same list)
  * or is empty; nodes whose dependencies are done run in parallel. `agent` is a role (implementer, reviewer, main)
  * or a pi model pattern. Prompts use {task}, {round}, {again} (a note for later review rounds), the last output of
- * any node as {id}, and an own-workspace node's patch file as {id.patch}.
+ * any agent or checks node as {id}, the file it was saved in as {id.file}, and an own-workspace node's patch file as
+ * {id.patch}. A checks command can use {task} and {round} (shell-quoted), and nothing else: no model's output is ever
+ * put into a command.
  *
  * Every agent step runs with the step limits of runStep: warned, steered firmly at its limit, aborted only if it
  * ignores both, killed only if pi is stuck, its session kept.
@@ -61,6 +63,8 @@ export interface ChecksNode {
   checks: 'gates' | string[];
   /** On failure, run this agent node again with the failures, up to `times` (default gateRetries). */
   onFail?: { fix: string; times?: number };
+  /** If the checks still fail, stop the run (a setup step that later steps can't do without). */
+  stopOnFail?: boolean;
 }
 
 export interface RepeatNode {
@@ -114,6 +118,13 @@ export const BUILT_IN: Record<string, Workflow> = {
 };
 
 const ID = /^[a-z][a-z0-9-]*$/;
+/** A variable in a prompt: {name}, {name.patch} or {name.file}. */
+const VAR = /\{([a-z][a-z0-9-]*)(\.patch|\.file)?\}/g;
+/** A variable in a checks command; ${name} is the shell's, left alone. */
+const COMMAND_VAR = /(?<!\$)\{([a-z][a-z0-9-]*)\}/g;
+
+/** A value as one shell word. */
+const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const ROLES = new Set(['implementer', 'reviewer', 'helper']);
 const WORKSPACES = new Set(['repo', 'copy', 'own']);
 
@@ -140,7 +151,7 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
     }
   };
   collect(w.nodes, 'nodes');
-  const vars = (s: string) => [...s.matchAll(/\{([a-z][a-z0-9-]*)(\.patch)?\}/g)];
+  const vars = (s: string) => [...s.matchAll(VAR)];
   const check = (nodes: WorkflowNode[], scope: string[]) => {
     const seen: string[] = [];
     for (const n of nodes) {
@@ -154,11 +165,11 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
           errors.push(`"${n.id}": agent "${n.agent}" is not a role (implementer, reviewer, main) or a model pattern (provider/model)`);
         else if (n.agent === 'main' && !opts.mainModel) errors.push(`"${n.id}": "main" needs a main model, which only /loop and /flow inside pi have`);
         if (typeof n.prompt !== 'string' || !n.prompt.trim()) errors.push(`"${n.id}": "prompt" must be a non-empty string`);
-        else for (const [, name, patch] of vars(n.prompt)) {
-          if (['task', 'round', 'again'].includes(name) && !patch) continue;
+        else for (const [, name, suffix] of vars(n.prompt)) {
+          if (['task', 'round', 'again'].includes(name) && !suffix) continue;
           const ref = all.get(name);
-          if (!ref || !isAgent(ref)) errors.push(`"${n.id}": the prompt uses {${name}${patch ?? ''}}, but there is no agent node "${name}" (braces are only for variables; write <${name}> for a placeholder)`);
-          else if (patch && ref.workspace !== 'own') errors.push(`"${n.id}": {${name}.patch} needs "${name}" to have "workspace": "own"`);
+          if (!ref || isRepeat(ref)) errors.push(`"${n.id}": the prompt uses {${name}${suffix ?? ''}}, but there is no agent or checks node "${name}" (braces are only for variables; write <${name}> for a placeholder)`);
+          else if (suffix === '.patch' && !(isAgent(ref) && ref.workspace === 'own')) errors.push(`"${n.id}": {${name}.patch} needs "${name}" to be an agent node with "workspace": "own"`);
         }
         if (n.role !== undefined && !ROLES.has(n.role)) errors.push(`"${n.id}": "role" must be implementer, reviewer or helper`);
         if (n.workspace !== undefined && !WORKSPACES.has(n.workspace)) errors.push(`"${n.id}": "workspace" must be repo, copy or own`);
@@ -168,6 +179,11 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
       } else if (isChecks(n)) {
         if (n.checks !== 'gates' && !(Array.isArray(n.checks) && n.checks.length && n.checks.every((c) => typeof c === 'string')))
           errors.push(`"${n.id}": "checks" must be "gates" or a list of commands`);
+        else if (Array.isArray(n.checks))
+          for (const c of n.checks)
+            for (const [, name] of c.matchAll(COMMAND_VAR))
+              if (all.has(name)) errors.push(`"${n.id}": a command can't use {${name}}: only {task} and {round} go into a command, never a step's output`);
+        if (n.stopOnFail !== undefined && typeof n.stopOnFail !== 'boolean') errors.push(`"${n.id}": "stopOnFail" must be true or false`);
         if (n.onFail) {
           const fix = all.get(n.onFail.fix);
           if (!fix || !isAgent(fix)) errors.push(`"${n.id}": onFail.fix "${n.onFail.fix}" is not an agent node`);
@@ -196,7 +212,7 @@ export function describeWorkflow(w: Workflow, cfg: LoopConfig, mainModel?: strin
     nodes.forEach((n, i) => {
       const after = n.after === undefined ? (i ? '' : '') : n.after.length ? ` after ${n.after.join(', ')}` : ' (at once)';
       if (isAgent(n)) lines.push(`${indent}${n.id}: ${who(n.agent)}${n.workspace && n.workspace !== 'repo' ? `, ${n.workspace} workspace` : ''}${after}: ${n.prompt.replace(/\s+/g, ' ').slice(0, 90)}`);
-      else if (isChecks(n)) lines.push(`${indent}${n.id}: checks ${n.checks === 'gates' ? cfg.gates.join(' && ') || '(none)' : n.checks.join(' && ')}${n.onFail ? `, failures back to ${n.onFail.fix}` : ''}${after}`);
+      else if (isChecks(n)) lines.push(`${indent}${n.id}: checks ${n.checks === 'gates' ? cfg.gates.join(' && ') || '(none)' : n.checks.join(' && ')}${n.onFail ? `, failures back to ${n.onFail.fix}` : ''}${n.stopOnFail ? ', the run stops if they fail' : ''}${after}`);
       else {
         lines.push(`${indent}${n.id}: repeat up to ${n.max ?? cfg.maxRounds} rounds until clean${after}:`);
         walk(n.repeat, indent + '  ');
@@ -290,6 +306,8 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
   const steps: StepRecord[] = [];
   const outputs = new Map<string, string>();
   const patches = new Map<string, string>();
+  /** Where each node's last output was saved, for {id.file}. */
+  const files = new Map<string, string>();
   const nodesById = new Map<string, WorkflowNode>();
   const index = (nodes: WorkflowNode[]) => nodes.forEach((n) => { nodesById.set(n.id, n); if (isRepeat(n)) index(n.repeat); });
   index(o.workflow.nodes);
@@ -305,13 +323,17 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     : { kind: 'stop', outcome: 'time budget', detail: `the ${cfg.maxTotalMinutes}-minute total ran out` };
 
   const render = (template: string, round: number) =>
-    template.replace(/\{([a-z][a-z0-9-]*)(\.patch)?\}/g, (whole, name: string, patch?: string) => {
-      if (name === 'task' && !patch) return o.task;
-      if (name === 'round' && !patch) return String(round);
-      if (name === 'again' && !patch) return round > 1 ? ` This is review round ${round}: earlier reviews have been applied, so judge the code as it is now.` : '';
-      if (patch) return patches.get(name) ?? '(no patch)';
+    template.replace(VAR, (whole, name: string, suffix?: string) => {
+      if (name === 'task' && !suffix) return o.task;
+      if (name === 'round' && !suffix) return String(round);
+      if (name === 'again' && !suffix) return round > 1 ? ` This is review round ${round}: earlier reviews have been applied, so judge the code as it is now.` : '';
+      if (suffix === '.patch') return patches.get(name) ?? '(no patch)';
+      if (suffix === '.file') return files.get(name) ?? '(no file)';
       return outputs.get(name) ?? whole;
     });
+  /** A checks command with {task} and {round} filled in, each as one shell word. */
+  const renderCommand = (command: string, round: number) =>
+    command.replace(COMMAND_VAR, (whole, name: string) => (name === 'task' ? shellQuote(o.task) : name === 'round' ? String(round) : whole));
 
   const resolve = (n: AgentNode): { rc: RoleConfig; role: Role } => {
     const role: Role = n.role ?? (n.agent === 'reviewer' ? 'reviewer' : n.agent === 'implementer' ? 'implementer' : 'helper');
@@ -403,6 +425,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     if (record.text.trim()) {
       record.outputFile = join(sessionDir, `${n.id}-r${round}${kind === 'gate-fix' ? '-fix' : ''}.md`);
       writeFileSync(record.outputFile, record.text.endsWith('\n') ? record.text : record.text + '\n');
+      files.set(n.id, record.outputFile);
     }
     if (wantsVerdict) record.verdict = parseVerdict(record.text);
     steps.push(record);
@@ -427,7 +450,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
   /** Checks run by code; a failure goes back to the onFail agent with the output, up to `times`. */
   const runChecks = async (n: ChecksNode, round: number): Promise<Signal> => {
     if (aborted() || minutesLeft() < 1) return outOfTime();
-    const commands = n.checks === 'gates' ? cfg.gates : n.checks;
+    const commands = n.checks === 'gates' ? cfg.gates : n.checks.map((c) => renderCommand(c, round));
     const timeout = cfg.gateTimeoutMinutes * 60_000;
     let results: GateResult[] = await runGates(commands, o.cwd, timeout);
     emit({ kind: 'gates', round, results });
@@ -441,6 +464,15 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
       steps[steps.length - 1].gates = results;
       emit({ kind: 'gates', round, results });
     }
+    // Later steps get what the commands printed as {id}, and the file it was saved in as {id.file}.
+    const output = results.map((g) => (results.length > 1 ? `$ ${g.command}\n${g.output}` : g.output)).join('\n');
+    const file = join(sessionDir, `${n.id}-r${round}.txt`);
+    writeFileSync(file, output.endsWith('\n') ? output : output + '\n');
+    outputs.set(n.id, output);
+    files.set(n.id, file);
+    const failed = results.find((g) => !g.ok);
+    if (failed && n.stopOnFail)
+      return { kind: 'stop', outcome: 'error', detail: `${n.id}: \`${failed.command}\` ${failed.timedOut ? 'timed out' : `failed (exit ${failed.exitCode})`}: ${lastLine(failed.tail) ?? 'no output'}` };
     return { kind: 'ok' };
   };
 

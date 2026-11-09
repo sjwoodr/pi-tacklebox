@@ -35,7 +35,7 @@ ${description}
 A workflow is JSON: { "description": "...", "nodes": [ ... ] }. Each node is one of:
 - an agent step: { "id": "a", "agent": "...", "prompt": "...", "workspace": "repo"|"copy"|"own", "after": [...] },
   optionally with "verdict": true, "role": "implementer"|"reviewer"|"helper", "label": "...", "maxTurns": N, "maxMinutes": N
-- checks: { "id": "c", "checks": "gates" | ["shell command", ...], "onFail": { "fix": "<agent step id>" } }
+- checks: { "id": "c", "checks": "gates" | ["shell command", ...], "onFail": { "fix": "<agent step id>" }, "stopOnFail": true }
 - a repeat: { "id": "r", "until": "clean", "max": 3, "repeat": [ ...nodes... ] }
 
 Rules:
@@ -54,8 +54,14 @@ Rules:
 - To carry work from round to round, keep it in files in "repo" (the text, notes, a log): {id} is only a step's
   last reply. A step that only answers (a story, a summary) changes no files: use "copy", pass its reply on with
   {id}, and ask for the text itself in the reply. The user sees the last step's reply.
-- Prompts can use {task} (the task below), {round}, {id} (a step's last reply) and {id.patch} (an own step's patch
-  file). Braces mean a variable and nothing else: for something a step should fill in, write <like this>.
+- Prompts can use {task} (the task below), {round}, {id} (a step's last reply, or what a checks step printed),
+  {id.file} (the file that was saved in) and {id.patch} (an own step's patch file). Braces mean a variable and
+  nothing else: for something a step should fill in, write <like this>.
+- A checks command can use {task} and {round} (each passed as one quoted word) and no other variable. To prepare
+  something every later step needs (fetch, set up, list files), use a checks step with "stopOnFail": true rather
+  than asking a model to run a command: code runs it exactly, and its output reaches later steps as {id}.
+- A long step can lose its prompt's middle when its context is compacted: for a long input from an earlier step,
+  give its {id.file} as well, so the step can read it again.
 - "verdict": true makes a step end with a VERDICT line (PASS or CHANGES, findings tagged [critical], [high] or
   [minor]); "agent": "reviewer" has it already. A repeat "until": "clean" needs such a step, and stops when it
   passes. Any model can be the one that judges: give it "verdict": true.
