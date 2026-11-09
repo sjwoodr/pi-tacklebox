@@ -9,6 +9,21 @@ import { CONFIG, getAgentDir } from '../config.ts';
 import type { LoopConfig } from './settings.ts';
 import { BUILT_IN, type Workflow, validateWorkflow } from './workflow.ts';
 
+/** A non-code example for the planner: the text lives in files in the repo, so each round sees the last. */
+const TEXT_EXAMPLE = {
+  description: 'One model corrects draft.md, another checks it, until the checker passes it',
+  nodes: [
+    { id: 'edit', agent: 'implementer', role: 'helper', workspace: 'repo',
+      prompt: 'Correct draft.md in place: {task}. List each change and why in notes.md.' },
+    { id: 'rounds', until: 'clean', max: 3, repeat: [
+      { id: 'check', agent: 'reviewer', role: 'helper', verdict: true, workspace: 'copy',
+        prompt: 'Check draft.md against: {task}. git diff HEAD shows the changes, notes.md the reasons. Do not edit files. Tag each problem [high] or [minor].' },
+      { id: 'answer', agent: 'implementer', role: 'helper', workspace: 'repo',
+        prompt: 'The checker wrote:\n{check}\nFix draft.md where it is right; where it is wrong, keep your version and say why in notes.md.' },
+    ] },
+  ],
+};
+
 /** What the conversation's model is asked to do with /flow. */
 export function plannerPrompt(description: string, cfg: LoopConfig, mainModel?: string): string {
   return `Plan a workflow for pi-loop and hand it to the flow_run tool. Do not do the work yourself and do not call
@@ -31,11 +46,16 @@ Rules:
   (${mainModel ?? 'this conversation\'s model'}), or another model only if the user names one: its exact
   "provider/id" as \`pi --list-models\` shows it, optionally with ":off", ":low" etc. for thinking. Don't guess a
   provider; flow_run refuses a name pi doesn't have and suggests the right ones.
-- "workspace": "repo" changes the real repository (one writer at a time); "copy" is a throwaway copy (reviewers,
-  read-only work); "own" is a private copy whose changes become a patch, for parallel attempts at code changes.
-- A step that only writes text (a story, an answer, a summary, a review) changes no files: use "copy", pass its
-  text on with {id}, and ask for the text itself in the reply. The user sees the last step's reply.
-- Prompts can use {task} (the task below), {id} (a step's last output) and {id.patch} (an own step's patch file).
+- "workspace": "repo" is the real directory: a step's edits there are what later steps and later rounds see (one
+  writer at a time). "copy" is a throwaway copy of it, made when the step starts (uncommitted edits included) and
+  deleted when it ends: for checking and reading; nothing a step does there survives, and it cannot reach the
+  real files. "own" is a private copy whose changes become a patch ({id.patch}), for parallel attempts at code.
+  So a step that must change files works in "repo"; never ask a "copy" step to edit the real files.
+- To carry work from round to round, keep it in files in "repo" (the text, notes, a log): {id} is only a step's
+  last reply. A step that only answers (a story, a summary) changes no files: use "copy", pass its reply on with
+  {id}, and ask for the text itself in the reply. The user sees the last step's reply.
+- Prompts can use {task} (the task below), {round}, {id} (a step's last reply) and {id.patch} (an own step's patch
+  file). Braces mean a variable and nothing else: for something a step should fill in, write <like this>.
 - "verdict": true makes a step end with a VERDICT line (PASS or CHANGES, findings tagged [critical], [high] or
   [minor]); "agent": "reviewer" has it already. A repeat "until": "clean" needs such a step, and stops when it
   passes. Any model can be the one that judges: give it "verdict": true.
@@ -45,8 +65,11 @@ Rules:
 - "checks": "gates" runs the project's tests (${cfg.gates.join(' && ') || 'none configured'}).
 - Keep it as small as the request allows.
 
-For example, the built-in review loop is:
+For example, the built-in review loop (code) is:
 ${JSON.stringify(BUILT_IN['review-loop'])}
+
+And a loop over a text file, where one model edits and another checks until it agrees:
+${JSON.stringify(TEXT_EXAMPLE)}
 
 Call flow_run with "task" (the job in plain words, used as {task}) and "workflow" (the JSON, as a string).`;
 }

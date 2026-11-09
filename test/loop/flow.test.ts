@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { validateWorkflow } from '../../src/loop/workflow.ts';
 import { parseWorkflow, plannerPrompt, saveWorkflow } from '../../src/loop/flow.ts';
 import { testConfig } from './helpers.ts';
 
@@ -15,6 +16,11 @@ test('the planner prompt names the models, the rules and the tool', () => {
   assert.match(p, /"implementer" \(fake\/impl\), "reviewer" \(fake\/rev\), "main"\s+\(ollama\/gemma4:latest\)/);
   assert.match(p, /"verdict": true makes a step end with a VERDICT line/, 'how a non-reviewer model judges');
   assert.match(p, /use "role": "helper"/);
+  assert.match(p, /write <like this>/, 'placeholders are not braces');
+  assert.match(p, /never ask a "copy" step to edit the real files/);
+  // The text example must itself be a valid workflow.
+  const example = JSON.parse(p.split('until it agrees:\n')[1].split('\n')[0]);
+  assert.deepEqual(validateWorkflow(example, { mainModel: false }), []);
   assert.match(p, /Call flow_run with "task"/);
   assert.match(p, /"review-loop"|"id":"implement"/);
 });

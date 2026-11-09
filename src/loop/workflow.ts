@@ -157,7 +157,7 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
         else for (const [, name, patch] of vars(n.prompt)) {
           if (['task', 'round', 'again'].includes(name) && !patch) continue;
           const ref = all.get(name);
-          if (!ref || !isAgent(ref)) errors.push(`"${n.id}": the prompt uses {${name}${patch ?? ''}}, but there is no agent node "${name}"`);
+          if (!ref || !isAgent(ref)) errors.push(`"${n.id}": the prompt uses {${name}${patch ?? ''}}, but there is no agent node "${name}" (braces are only for variables; write <${name}> for a placeholder)`);
           else if (patch && ref.workspace !== 'own') errors.push(`"${n.id}": {${name}.patch} needs "${name}" to have "workspace": "own"`);
         }
         if (n.role !== undefined && !ROLES.has(n.role)) errors.push(`"${n.id}": "role" must be implementer, reviewer or helper`);
