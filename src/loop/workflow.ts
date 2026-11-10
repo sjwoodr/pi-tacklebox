@@ -16,13 +16,16 @@
  * {id.patch}. A checks command can use {task} and {round} (shell-quoted), and nothing else: no model's output is ever
  * put into a command.
  *
+ * A first checks node with "setsCwd": true can move the run: its commands print LOOP_CWD=<absolute directory> (a
+ * setup script's worktree, say), and every later step, check and copy works there instead of where pi started.
+ *
  * Every agent step runs with the step limits of runStep: warned, steered firmly at its limit, aborted only if it
  * ignores both, killed only if pi is stuck, its session kept.
  */
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import { type GateResult, runGates } from './gates.ts';
 import { ANSWER_ASK, HELPER_ROLE, IMPLEMENTER_ROLE, REVIEWER_ROLE, VERDICT_ASK, WARNING, WRAP_UP_INSIST, gateFixPrompt } from './prompts.ts';
 import { type LoopEvent, type LoopReport, type Outcome, type Role, type StepRecord, renderReport, withoutThinking } from './report.ts';
@@ -65,6 +68,11 @@ export interface ChecksNode {
   onFail?: { fix: string; times?: number };
   /** If the checks still fail, stop the run (a setup step that later steps can't do without). */
   stopOnFail?: boolean;
+  /**
+   * The run's later steps work in the directory its commands name with a LOOP_CWD=<absolute path> line (the last
+   * one counts). Only the first node can set it, and every other node must come after it.
+   */
+  setsCwd?: boolean;
 }
 
 export interface RepeatNode {
@@ -127,6 +135,8 @@ const COMMAND_VAR = /(?<!\$)\{([a-z][a-z0-9-]*)\}/g;
 
 /** A value as one shell word. */
 const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+/** The line a setsCwd checks node prints to name the run's directory. */
+const CWD_LINE = /^LOOP_CWD=(.+)$/gm;
 const ROLES = new Set(['implementer', 'reviewer', 'helper']);
 const WORKSPACES = new Set(['repo', 'copy', 'own']);
 
@@ -153,6 +163,9 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
     }
   };
   collect(w.nodes, 'nodes');
+  // Every node must start after the one that moves the run, or it could start in the old directory.
+  if (isChecks(w.nodes[0]) && w.nodes[0].setsCwd)
+    for (const n of w.nodes.slice(1)) if (Array.isArray(n.after) && !n.after.length) errors.push(`"${n.id}": "after": [] would start it before "${w.nodes[0].id}" sets the run's directory`);
   if (w.gates !== undefined && typeof w.gates !== 'boolean') errors.push('"gates" must be true or false');
   else if (w.gates === false)
     for (const n of all.values()) if (isChecks(n) && n.checks === 'gates') errors.push(`"${n.id}": "checks": "gates" in a workflow with "gates": false; list its commands instead`);
@@ -189,6 +202,8 @@ export function validateWorkflow(raw: unknown, opts: { mainModel?: boolean } = {
             for (const [, name] of c.matchAll(COMMAND_VAR))
               if (all.has(name)) errors.push(`"${n.id}": a command can't use {${name}}: only {task} and {round} go into a command, never a step's output`);
         if (n.stopOnFail !== undefined && typeof n.stopOnFail !== 'boolean') errors.push(`"${n.id}": "stopOnFail" must be true or false`);
+        if (n.setsCwd !== undefined && typeof n.setsCwd !== 'boolean') errors.push(`"${n.id}": "setsCwd" must be true or false`);
+        else if (n.setsCwd && n !== w.nodes[0]) errors.push(`"${n.id}": only the first node can set the run's directory ("setsCwd")`);
         if (n.onFail) {
           const fix = all.get(n.onFail.fix);
           if (!fix || !isAgent(fix)) errors.push(`"${n.id}": onFail.fix "${n.onFail.fix}" is not an agent node`);
@@ -217,7 +232,7 @@ export function describeWorkflow(w: Workflow, cfg: LoopConfig, mainModel?: strin
     nodes.forEach((n, i) => {
       const after = n.after === undefined ? (i ? '' : '') : n.after.length ? ` after ${n.after.join(', ')}` : ' (at once)';
       if (isAgent(n)) lines.push(`${indent}${n.id}: ${who(n.agent)}${n.workspace && n.workspace !== 'repo' ? `, ${n.workspace} workspace` : ''}${after}: ${n.prompt.replace(/\s+/g, ' ').slice(0, 90)}`);
-      else if (isChecks(n)) lines.push(`${indent}${n.id}: checks ${n.checks === 'gates' ? cfg.gates.join(' && ') || '(none)' : n.checks.join(' && ')}${n.onFail ? `, failures back to ${n.onFail.fix}` : ''}${n.stopOnFail ? ', the run stops if they fail' : ''}${after}`);
+      else if (isChecks(n)) lines.push(`${indent}${n.id}: checks ${n.checks === 'gates' ? cfg.gates.join(' && ') || '(none)' : n.checks.join(' && ')}${n.onFail ? `, failures back to ${n.onFail.fix}` : ''}${n.stopOnFail ? ', the run stops if they fail' : ''}${n.setsCwd ? ', later steps work in the directory it names' : ''}${after}`);
       else {
         lines.push(`${indent}${n.id}: repeat up to ${n.max ?? cfg.maxRounds} rounds until clean${after}:`);
         walk(n.repeat, indent + '  ');
@@ -308,6 +323,8 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
   mkdirSync(sessionDir, { recursive: true });
   const emit = (e: LoopEvent) => o.onEvent?.(e);
   emit({ kind: 'start', runId, sessionDir, workflow: o.name });
+  /** Where steps, checks and copies work: where pi started, until a setsCwd node names another directory. */
+  let workDir = o.cwd;
 
   const steps: StepRecord[] = [];
   const outputs = new Map<string, string>();
@@ -367,9 +384,9 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     running.add(n.id);
     const name = `pi-loop ${runId} #${stepN} ${label}`;
     emit({ kind: 'step-start', step: { n: stepN, id: n.id, round, role, kind, label, name, model: rc.model } });
-    const copy = workspace === 'repo' ? undefined : makeReviewCopy(o.cwd, `${n.id}-r${round}`);
+    const copy = workspace === 'repo' ? undefined : makeReviewCopy(workDir, `${n.id}-r${round}`);
     if (!copy) touchedRepo = true;
-    const cwd = copy?.path ?? o.cwd;
+    const cwd = copy?.path ?? workDir;
     // The copy starts with the repo's uncommitted work (and a node_modules link): an own step's patch is what
     // the step changed on top of that, so record where it started.
     let baseTree: string | undefined;
@@ -381,7 +398,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
         // no base: the patch falls back to HEAD
       }
     }
-    const before = n.progress && workspace === 'repo' && kind !== 'gate-fix' ? workFingerprint(o.cwd) : undefined;
+    const before = n.progress && workspace === 'repo' && kind !== 'gate-fix' ? workFingerprint(workDir) : undefined;
     const instructions = role === 'reviewer' ? REVIEWER_ROLE(rc) : role === 'implementer' ? IMPLEMENTER_ROLE(rc) : HELPER_ROLE(rc);
     const run = () =>
       runStep({
@@ -448,7 +465,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     // A later step built on an empty answer only makes something up: stop instead.
     if (!record.text.trim() && usedLater.has(n.id))
       return { kind: 'stop', outcome: 'error', detail: `${label} gave no answer, even when asked again, and later steps use it` };
-    if (before !== undefined && workFingerprint(o.cwd) === before)
+    if (before !== undefined && workFingerprint(workDir) === before)
       return { kind: 'stop', outcome: 'no progress', detail: `round ${round}: ${label} changed nothing` };
     if (record.verdict) {
       lastReview = record.text;
@@ -465,7 +482,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     if (aborted() || minutesLeft() < 1) return outOfTime();
     const commands = n.checks === 'gates' ? cfg.gates : n.checks.map((c) => renderCommand(c, round));
     const timeout = cfg.gateTimeoutMinutes * 60_000;
-    let results: GateResult[] = await runGates(commands, o.cwd, timeout);
+    let results: GateResult[] = await runGates(commands, workDir, timeout);
     emit({ kind: 'gates', round, results });
     if (steps.length) steps[steps.length - 1].gates = results;
     const fixNode = n.onFail ? (nodesById.get(n.onFail.fix) as AgentNode) : undefined;
@@ -473,7 +490,7 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     for (let i = 0; fixNode && i < times && results.some((g) => !g.ok); i++) {
       const sig = await runAgent(fixNode, round, gateFixPrompt(results, o.task), { kind: 'gate-fix', label: 'fix failed checks', workspace: 'repo' });
       if (sig.kind === 'stop') return sig;
-      results = await runGates(commands, o.cwd, timeout);
+      results = await runGates(commands, workDir, timeout);
       steps[steps.length - 1].gates = results;
       emit({ kind: 'gates', round, results });
     }
@@ -484,8 +501,17 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
     outputs.set(n.id, output);
     files.set(n.id, file);
     const failed = results.find((g) => !g.ok);
-    if (failed && n.stopOnFail)
+    if (failed && (n.stopOnFail || n.setsCwd))
       return { kind: 'stop', outcome: 'error', detail: `${n.id}: \`${failed.command}\` ${failed.timedOut ? 'timed out' : `failed (exit ${failed.exitCode})`}: ${lastLine(failed.tail) ?? 'no output'}` };
+    if (n.setsCwd) {
+      // A step in the wrong directory reads the wrong code without noticing: no usable directory stops the run.
+      const named = [...output.matchAll(CWD_LINE)].at(-1)?.[1].trim();
+      let isDir = false;
+      try { isDir = !!named && isAbsolute(named) && statSync(named).isDirectory(); } catch {}
+      if (!isDir) return { kind: 'stop', outcome: 'error', detail: named ? `${n.id}: LOOP_CWD=${named} is not an absolute path to a directory` : `${n.id}: printed no LOOP_CWD=<directory> line, and later steps need one ("setsCwd")` };
+      workDir = named!;
+      emit({ kind: 'cwd', dir: workDir });
+    }
     return { kind: 'ok' };
   };
 
@@ -547,11 +573,11 @@ export async function runWorkflow(o: RunOptions): Promise<LoopReport> {
   }
 
   const finalGatesSkipped = aborted() ? 'stopped' : o.workflow.gates === false ? 'the workflow has "gates": false' : !touchedRepo ? 'no step worked in the repo' : undefined;
-  const finalGates = finalGatesSkipped ? [] : await runGates(cfg.gates, o.cwd, cfg.gateTimeoutMinutes * 60_000);
+  const finalGates = finalGatesSkipped ? [] : await runGates(cfg.gates, workDir, cfg.gateTimeoutMinutes * 60_000);
   const reportFile = join(sessionDir, 'report.md');
   const report: LoopReport = {
     runId, workflow: o.name, outcome: result.outcome, detail: result.detail, ms: Date.now() - started, steps, finalGates, finalGatesSkipped,
-    lastReview, sessionDir, reportFile, markdown: '',
+    lastReview, sessionDir, workDir: workDir !== o.cwd ? workDir : undefined, reportFile, markdown: '',
   };
   report.markdown = renderReport(report);
   writeFileSync(reportFile, report.markdown);

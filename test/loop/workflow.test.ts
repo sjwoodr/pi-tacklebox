@@ -25,6 +25,10 @@ test('validation names each problem', () => {
   assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'c', checks: ['echo {a}'] }] }), /a command can't use \{a\}: only \{task\} and \{round\}/);
   assert.match(errs({ nodes: [{ id: 'c', checks: ['true'] }, { id: 'a', agent: 'implementer', prompt: '{c.patch}' }] }), /\{c\.patch\} needs "c" to be an agent node with "workspace": "own"/);
   assert.match(errs({ nodes: [{ id: 'c', checks: ['true'], stopOnFail: 'yes' }] }), /"stopOnFail" must be true or false/);
+  assert.match(errs({ nodes: [{ id: 'c', checks: ['true'], setsCwd: 'yes' }] }), /"setsCwd" must be true or false/);
+  assert.match(errs({ nodes: [{ id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'c', checks: ['true'], setsCwd: true }] }), /only the first node can set the run's directory/);
+  assert.match(errs({ nodes: [{ id: 'c', checks: ['true'], setsCwd: true }, { id: 'a', agent: 'implementer', prompt: 'x', after: [] }] }), /"a": "after": \[\] would start it before "c" sets the run's directory/);
+  assert.equal(errs({ nodes: [{ id: 'c', checks: ['true'], setsCwd: true }, { id: 'a', agent: 'implementer', prompt: 'x' }, { id: 'b', agent: 'implementer', prompt: 'y', after: ['c'] }] }), '');
   assert.equal(errs({ gates: false, nodes: [{ id: 'c', checks: ['true'] }] }), '');
   assert.match(errs({ gates: 'no', nodes: [{ id: 'c', checks: ['true'] }] }), /"gates" must be true or false/);
   assert.match(errs({ gates: false, nodes: [{ id: 'r', until: 'clean', max: 2, repeat: [{ id: 'v', agent: 'reviewer', prompt: 'x' }, { id: 'c', checks: 'gates' }] }] }), /"c": "checks": "gates" in a workflow with "gates": false/);
@@ -106,6 +110,46 @@ test('stopOnFail: a failed setup stops the run before any later step', async () 
   assert.equal(r.outcome, 'error');
   assert.match(r.detail, /setup: `echo "merge conflicts" >&2; exit 4` failed \(exit 4\): merge conflicts/);
   assert.equal(r.steps.length, 0);
+  assert.ok(!existsSync(file) || !log(file).some((e) => e.cmd === 'start'), 'no pi was started');
+});
+
+test('setsCwd: later steps, checks and the report use the directory the setup names', async () => {
+  const { dir } = fakePi({ implementer: { turns: 1, writeFile: 'here.txt' } });
+  const started = gitRepo();
+  const named = gitRepo();
+  const wf: Workflow = { gates: false, nodes: [
+    { id: 'setup', checks: [`echo "LOOP_CWD=/nope"; echo noise; echo "LOOP_CWD=${named}"; echo done`], setsCwd: true },
+    { id: 'a', agent: 'implementer', prompt: 'x' },
+    { id: 'b', agent: 'implementer', prompt: 'y', after: ['setup'] },
+    { id: 'where', checks: ['pwd'], after: ['a', 'b'] },
+  ] };
+  const events: string[] = [];
+  const r = await runWorkflow({ workflow: wf, name: 'test', task: 't', cwd: started, config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI, onEvent: (e) => { if (e.kind === 'cwd') events.push(e.dir); } });
+  assert.equal(r.outcome, 'finished', r.detail);
+  assert.equal(readFileSync(join(named, 'here.txt'), 'utf8'), 'call 0\ncall 1\n', 'both steps worked in the named directory');
+  assert.ok(!existsSync(join(started, 'here.txt')), 'and not where pi started');
+  assert.equal(readFileSync(join(r.sessionDir, 'where-r0.txt'), 'utf8').trim(), named);
+  assert.deepEqual(events, [named], 'the last LOOP_CWD line counts');
+  assert.equal(r.workDir, named);
+  assert.match(r.markdown, new RegExp(`Worked in \`${named}\``));
+});
+
+test('setsCwd: no usable directory stops the run before any step starts', async () => {
+  const { dir, log: file } = fakePi({ implementer: { turns: 1 } });
+  const run = (cmd: string) => runWorkflow({
+    workflow: { gates: false, nodes: [{ id: 'setup', checks: [cmd], setsCwd: true }, { id: 'a', agent: 'implementer', prompt: 'x' }] },
+    name: 'test', task: 't', cwd: gitRepo(), config: testConfig(join(dir, 'runs'), { gates: [] }), piCommand: FAKE_PI,
+  });
+  const none = await run('echo set up');
+  assert.equal(none.outcome, 'error');
+  assert.match(none.detail, /setup: printed no LOOP_CWD=<directory> line/);
+  const relative = await run('echo LOOP_CWD=some/dir');
+  assert.match(relative.detail, /LOOP_CWD=some\/dir is not an absolute path to a directory/);
+  const missing = await run(`echo LOOP_CWD=${join(dir, 'no-such-dir')}`);
+  assert.match(missing.detail, /is not an absolute path to a directory/);
+  const failed = await run(`echo LOOP_CWD=${dir}; exit 3`);
+  assert.match(failed.detail, /setup: .* failed \(exit 3\)/, 'a failed setsCwd setup stops even without stopOnFail');
+  for (const r of [none, relative, missing, failed]) assert.equal(r.steps.length, 0);
   assert.ok(!existsSync(file) || !log(file).some((e) => e.cmd === 'start'), 'no pi was started');
 });
 

@@ -59,6 +59,8 @@ export interface LoopReport {
   finalGatesSkipped?: string;
   lastReview?: string;
   sessionDir: string;
+  /** Where the steps worked, when a setsCwd node moved the run away from where pi started. */
+  workDir?: string;
   reportFile: string;
   markdown: string;
 }
@@ -71,6 +73,7 @@ export type LoopEvent =
   | { kind: 'step-progress'; step: StepHead; progress: StepProgress }
   | { kind: 'step-end'; step: StepRecord }
   | { kind: 'gates'; round: number; results: GateResult[] }
+  | { kind: 'cwd'; dir: string }
   | { kind: 'done'; report: LoopReport };
 
 const THINKING = /:(off|minimal|low|medium|high|xhigh|max)$/;
@@ -104,6 +107,7 @@ export function renderReport(r: LoopReport): string {
   lines.push(`**Outcome: ${r.outcome}** (${r.detail}). Workflow \`${r.workflow}\`, ${min(r.ms)}, ${r.steps.length} steps.`, '');
   const models = [...new Set(r.steps.map((s) => s.model))];
   if (models.length) lines.push(`Models: ${models.map((m) => `\`${m}\``).join(', ')}.`, '');
+  if (r.workDir) lines.push(`Worked in \`${r.workDir}\` (named by the setup).`, '');
   lines.push('| step | what | turns | time | read | write | limit | session |', '|---|---|---|---|---|---|---|---|');
   for (const s of r.steps) {
     const limit = [

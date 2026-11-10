@@ -36,7 +36,7 @@ A workflow is JSON: { "description": "...", "nodes": [ ... ] }, with "gates": fa
 (a text, a review, research), so the project's tests don't run at the end. Each node is one of:
 - an agent step: { "id": "a", "agent": "...", "prompt": "...", "workspace": "repo"|"copy"|"own", "after": [...] },
   optionally with "verdict": true, "role": "implementer"|"reviewer"|"helper", "label": "...", "maxTurns": N, "maxMinutes": N
-- checks: { "id": "c", "checks": "gates" | ["shell command", ...], "onFail": { "fix": "<agent step id>" }, "stopOnFail": true }
+- checks: { "id": "c", "checks": "gates" | ["shell command", ...], "onFail": { "fix": "<agent step id>" }, "stopOnFail": true, "setsCwd": true }
 - a repeat: { "id": "r", "until": "clean", "max": 3, "repeat": [ ...nodes... ] }
 
 Rules:
@@ -60,7 +60,9 @@ Rules:
   nothing else: for something a step should fill in, write <like this>.
 - A checks command can use {task} and {round} (each passed as one quoted word) and no other variable. To prepare
   something every later step needs (fetch, set up, list files), use a checks step with "stopOnFail": true rather
-  than asking a model to run a command: code runs it exactly, and its output reaches later steps as {id}.
+  than asking a model to run a command: code runs it exactly, and its output reaches later steps as {id}. If that
+  setup makes a directory the work must happen in (a worktree, a checkout), make it the first node with
+  "setsCwd": true and have it print LOOP_CWD=<absolute path>: every later step then works there.
 - A long step can lose its prompt's middle when its context is compacted: for a long input from an earlier step,
   give its {id.file} as well, so the step can read it again.
 - "verdict": true makes a step end with a VERDICT line (PASS or CHANGES, findings tagged [critical], [high] or

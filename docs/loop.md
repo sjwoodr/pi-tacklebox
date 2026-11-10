@@ -117,7 +117,12 @@ and stop at the verdict).
   sends failures back to that step, and `stopOnFail: true` stops the run if they still fail. A command can use
   `{task}` and `{round}`, each passed as one shell-quoted word, and nothing else: no model's output is put into a
   command. So a setup that later steps rely on (`setup.sh {task}`) is a checks node with `stopOnFail`, not an
-  agent asked to run it: code runs it exactly, and its output reaches the others as `{setup}`.
+  agent asked to run it: code runs it exactly, and its output reaches the others as `{setup}`. A setup that makes
+  a directory for the work (a worktree, a checkout) can move the run there: give the first node `setsCwd: true`
+  and have it print `LOOP_CWD=<absolute path>` (the last such line counts). Every later step, check, copy and
+  the final checks then work in that directory instead of where pi started, so a relative path reads the right
+  code. No such line, a path that isn't an absolute directory, or a failed command stops the run before any
+  step starts; only the first node can set it, and no other node may start beside it (`after: []`).
 - **`repeat`:** `{ "id", "repeat": [...], "until": "clean", "max": N }` (default `maxRounds`).
 
 A workflow that changes no code (a review, a text) can say `"gates": false` next to its `nodes`: the final checks

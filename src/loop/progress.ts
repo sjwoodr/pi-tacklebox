@@ -16,6 +16,8 @@ export function describeEvent(e: LoopEvent): string | undefined {
       const v = s.verdict ? ` · VERDICT ${s.verdict.verdict} (${s.verdict.counts.critical} critical, ${s.verdict.counts.high} high, ${s.verdict.counts.minor} minor)` : '';
       return `step ${s.n} done: ${s.label} · ${s.turns} turns · ${min(s.ms)} · read ${rate(s.readTokens, s.readMs)} · write ${rate(s.writeTokens, s.writeMs)}${limit}${v}`;
     }
+    case 'cwd':
+      return `working in ${e.dir}`;
     case 'gates':
       return `checks: ${e.results.map((g) => `${g.command} ${g.ok ? 'ok' : g.timedOut ? 'TIMED OUT' : 'FAILED'}`).join(', ') || 'none'}`;
     case 'done':
