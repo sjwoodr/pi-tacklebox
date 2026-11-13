@@ -13,9 +13,11 @@ function setup(maxRounds = 2) {
   const status = (code: number) => writeFileSync(join(cwd, 'status'), String(code));
   status(0);
   const handlers = new Map<string, (event: any, ctx: any) => Promise<any>>();
+  const agentDirBefore = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = agent;
   verifyDone({ on: (name: string, h: any) => void handlers.set(name, h) } as never);
-  delete process.env.PI_CODING_AGENT_DIR;
+  if (agentDirBefore === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = agentDirBefore;
   const ctx = { hasUI: false, cwd };
   return {
     status,

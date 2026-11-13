@@ -13,13 +13,15 @@ function setup(config: object = {}) {
   const handlers = new Map<string, (event: any, ctx: any) => Promise<any>>();
   const sent: { message: any; options: any }[] = [];
   const statuses: (string | undefined)[] = [];
+  const agentDirBefore = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = agent;
   jobs({
     on: (name: string, h: any) => void handlers.set(name, h),
     registerTool: (tool: any) => void tools.set(tool.name, tool),
     sendMessage: (message: any, options: any) => void sent.push({ message, options }),
   } as never);
-  delete process.env.PI_CODING_AGENT_DIR;
+  if (agentDirBefore === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = agentDirBefore;
   const cwd = mkdtempSync(join(tmpdir(), 'tacklebox-project-'));
   const ui = { hasUI: true, cwd, ui: { setStatus: (_k: string, v?: string) => void statuses.push(v) } };
   const print = { hasUI: false, cwd };

@@ -10,9 +10,11 @@ writeFileSync(join(dir, 'tacklebox.json'), JSON.stringify({ outlineReads: { enab
 writeFileSync(join(dir, 'big.ts'), Array.from({ length: 300 }, (_, i) => `const v${i} = ${i};`).join('\n'));
 
 let hook: (event: object, ctx: object) => Promise<{ content: { text: string }[] } | undefined>;
+const agentDirBefore = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = dir;
 outlineReads({ on: (_event: string, handler: typeof hook) => (hook = handler) } as never);
-delete process.env.PI_CODING_AGENT_DIR;
+if (agentDirBefore === undefined) delete process.env.PI_CODING_AGENT_DIR;
+else process.env.PI_CODING_AGENT_DIR = agentDirBefore;
 
 const read = (input: object, returned: number, extra: object = {}) =>
   hook({ toolName: 'read', isError: false, input, content: [{ type: 'text', text: 'x'.repeat(returned) }], ...extra }, { cwd: dir });
