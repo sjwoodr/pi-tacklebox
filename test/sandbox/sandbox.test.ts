@@ -181,8 +181,10 @@ test('the extension stays out when off, guards file tools when on, and refuses e
   const load = () => {
     const handlers = new Map<string, (event: any, ctx?: any) => any>();
     const tools: string[] = [];
-    sandbox({ on: (name: string, h: any) => void handlers.set(name, h), registerTool: (t: { name: string }) => void tools.push(t.name) } as never);
-    return { handlers, tools };
+    const modes: unknown[] = [];
+    const registerTool = (t: { name: string; executionMode?: string }) => void (tools.push(t.name), modes.push(t.executionMode));
+    sandbox({ on: (name: string, h: any) => void handlers.set(name, h), registerTool } as never);
+    return { handlers, tools, modes };
   };
   withAgentDir(undefined, () => {
     const { handlers, tools } = load();
@@ -192,8 +194,10 @@ test('the extension stays out when off, guards file tools when on, and refuses e
   withAgentDir({}, (dir) => {
     writeFileSync(join(dir, 'tacklebox.json'), JSON.stringify({ sandbox: { enabled: true, srt: fakeSrt(dir) } }));
     writeFileSync(join(dir, 'srt-settings.json'), JSON.stringify({ ...SETTINGS, filesystem: { ...SETTINGS.filesystem, denyRead: [dir] } }));
-    const { handlers, tools } = load();
+    const { handlers, tools, modes } = load();
     assert.deepEqual(tools, ['bash']);
+    // Two srt processes at once in one folder delete each other's mount points.
+    assert.deepEqual(modes, ['sequential']);
     const call = handlers.get('tool_call')!;
     assert.equal(call({ toolName: 'read', input: { path: join(dir, 'x') } })?.block, true);
     assert.equal(call({ toolName: 'bash', input: { command: 'ls' } }), undefined);

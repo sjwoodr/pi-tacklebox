@@ -91,6 +91,12 @@ anything else running inside pi's own process is not covered (see [Limits](#limi
   it yourself outside pi. verify-done and the loop's gates run it inside.
 - **Local servers.** Inside srt, `localhost` is the sandbox's own, so a command cannot reach a server on
   your machine's loopback (Ollama, a dev database). pi's model calls are outside and unaffected.
+- **One srt at a time per folder.** Where a protected name (`.mcp.json`, `.vscode`, `.gitconfig`)
+  does not exist yet, srt puts an empty placeholder there and deletes it when its command ends,
+  whether or not another srt is still using it. So while the sandbox is on, pi runs bash calls one
+  at a time, never in parallel. A background job that ends while a command runs, or a second pi
+  session in the same folder, can still remove a placeholder another command relies on: that command
+  fails to start (`bwrap: Can't find source path`), or loses that one protection until it ends.
 - **Start pi in a project, not above many of them.** On Linux srt protects the hooks and config of every
   git repository it finds below the working directory, and bubblewrap takes at most 9000 arguments.
   Started from a folder with hundreds of repositories below it (`/tmp` full of worktrees, say), every

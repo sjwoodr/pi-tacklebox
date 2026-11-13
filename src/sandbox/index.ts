@@ -30,14 +30,17 @@ export default function (pi: ExtensionAPI) {
     problem = (err as Error).message;
   }
 
-  pi.registerTool(
-    createBashToolDefinition(cwd, {
+  // Sequential: srt removes its mount points when a command ends, so two at once in one folder break
+  // each other (a failed start, or a protected path left unprotected). pi then runs the batch in turn.
+  pi.registerTool({
+    ...createBashToolDefinition(cwd, {
       spawnHook: ({ command, cwd: dir, env }) => {
         if (!box) throw new Error(problem);
         return { command: box.wrap(command), cwd: dir, env: box.env(env) };
       },
     }),
-  );
+    executionMode: 'sequential',
+  });
 
   pi.on('tool_call', (event) => {
     if (!box) return GUARDED.has(event.toolName) ? { block: true, reason: problem } : undefined;
