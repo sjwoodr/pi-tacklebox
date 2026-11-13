@@ -91,6 +91,12 @@ anything else running inside pi's own process is not covered (see [Limits](#limi
   it yourself outside pi. verify-done and the loop's gates run it inside.
 - **Local servers.** Inside srt, `localhost` is the sandbox's own, so a command cannot reach a server on
   your machine's loopback (Ollama, a dev database). pi's model calls are outside and unaffected.
+- **Start pi in a project, not above many of them.** On Linux srt protects the hooks and config of every
+  git repository it finds below the working directory, and bubblewrap takes at most 9000 arguments.
+  Started from a folder with hundreds of repositories below it (`/tmp` full of worktrees, say), every
+  command fails with `Sandbox profile has N bwrap arguments and bwrap accepts at most 9000`. Start pi
+  from the project itself. srt's `mandatoryDenySearchDepth` lowers the count, but leaves the deeper
+  repositories unprotected.
 
 ## Checking it
 
