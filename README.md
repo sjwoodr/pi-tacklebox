@@ -15,6 +15,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | bang | `!command` gets an answer straight away: the model reads the output and responds, with no need to send another message. `!!command` stays private | on |
 | session-search | `session_search` tool and `/recall <regex>` command: search past pi sessions for what you said and the commands that ran, newest first. Tool output, thinking, replies and `!!` commands are never searched or shown. Refuses to run on a model that isn't local (cloud models behind local Ollama count as remote), unless `allowNonLocal` is set | on |
 | loop | `/loop <task>`: one model implements, another reviews a throwaway copy, the first fixes, until the review passes, with turn and time limits on every step and the project's tests run between steps. Other workflows (parallel steps, own workspaces, checks, repeats) can be named in tacklebox.json, or drafted for one run with `/flow <what you want>` and approved before they run. [docs/loop.md](docs/loop.md) | on (`/loop` needs its two models named) |
+| sandbox | Runs every bash command inside Anthropic's sandbox-runtime (`srt`): writes only where allowed, network only to allowed hosts, denied folders hidden, variables named like secrets removed. read/write/edit/grep/find/ls are checked against the same rules, and `job_start`, verify-done and the loop's gates run through it too. pi, its model calls and your `!` commands stay outside. [docs/sandbox.md](docs/sandbox.md) | off (needs `srt`) |
 
 ## Install
 
@@ -47,6 +48,7 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 },
   "bang": { "enabled": true },
   "sessionSearch": { "enabled": true, "allowNonLocal": false },
+  "sandbox": { "enabled": false, "srt": "srt", "settings": "srt-settings.json" },
   "loop": { "enabled": true }
 }
 ```
@@ -71,6 +73,9 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   `enabled` to `false` to get pi's own behavior back. A `!` run while the model is busy waits for your
   next message, as it does without this.
 
+- `sandbox`: needs `srt` (`npm install -g @anthropic-ai/sandbox-runtime`) and, on Linux, bubblewrap,
+  socat and ripgrep. `settings` is srt's own settings file, in pi's agent directory unless absolute.
+  When it is on but unusable, commands and file tools are refused. See [docs/sandbox.md](docs/sandbox.md).
 - `loop`: `/flow` works as is, since each workflow names its models. `/loop` (the built-in review loop) also
   needs `loop.implementer.model` and `loop.reviewer.model`; limits, rounds, checks and time all have
   defaults. `enabled: false` removes both commands. See [docs/loop.md](docs/loop.md).

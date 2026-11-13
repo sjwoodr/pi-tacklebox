@@ -27,7 +27,8 @@
       "./src/jobs/index.ts",
       "./src/bang/index.ts",
       "./src/session-search/index.ts",
-      "./src/loop/index.ts"
+      "./src/loop/index.ts",
+      "./src/sandbox/index.ts"
     ],
     "skills": [
       "./skills"

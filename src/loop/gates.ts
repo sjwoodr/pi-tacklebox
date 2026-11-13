@@ -1,5 +1,6 @@
 /** Checks the loop runs itself after an implementer step: no model decides whether tests passed. */
 import { spawn } from 'node:child_process';
+import { shellCommand } from '../sandbox/sandbox.ts';
 
 export interface GateResult {
   command: string;
@@ -19,7 +20,14 @@ const OUTPUT_CHARS = 30_000;
 export function runGate(command: string, cwd: string, timeoutMs: number): Promise<GateResult> {
   const started = Date.now();
   return new Promise((resolve) => {
-    const proc = spawn('bash', ['-c', command], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let run: ReturnType<typeof shellCommand>;
+    try {
+      run = shellCommand(command, cwd);
+    } catch (err) {
+      const output = `could not run it: ${(err as Error).message}`;
+      return resolve({ command, ok: false, exitCode: null, timedOut: false, ms: Date.now() - started, tail: output, output });
+    }
+    const proc = spawn('bash', ['-c', run.command], { cwd, detached: true, env: run.env, stdio: ['ignore', 'pipe', 'pipe'] });
     // The start (a setup script prints its paths first) and the end (a test run ends with its failures).
     const half = OUTPUT_CHARS / 2;
     let head = '';

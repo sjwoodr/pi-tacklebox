@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { shellCommand } from '../sandbox/sandbox.ts';
 
 export interface Job {
   id: number;
@@ -40,11 +41,13 @@ export class Jobs {
   }
 
   start(command: string, cwd: string, onExit: (job: Job) => void): Job {
+    // Before the log is opened: a sandbox that is on but unusable refuses the job.
+    const run = shellCommand(command, cwd);
     mkdirSync(this.dir, { recursive: true });
     const id = this.next++;
     const log = join(this.dir, `job-${id}.log`);
     const fd = openSync(log, 'w');
-    const child = spawn('sh', ['-c', command], { cwd, detached: true, stdio: ['ignore', fd, fd] });
+    const child = spawn('sh', ['-c', run.command], { cwd, detached: true, env: run.env, stdio: ['ignore', fd, fd] });
     closeSync(fd);
     const job: Job = { id, command, cwd, pid: child.pid, log, started: Date.now() };
     this.jobs.set(id, job);

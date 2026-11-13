@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { shellCommand } from '../sandbox/sandbox.ts';
 
 export interface TestRun {
   ok: boolean;
@@ -14,7 +15,14 @@ const TAIL_CHARS = 4000;
 /** Runs `command` through sh in `cwd`, killing it (and its children) after `timeoutSeconds`. */
 export function runTests(command: string, cwd: string, timeoutSeconds: number): Promise<TestRun> {
   return new Promise((resolve) => {
-    const child = spawn('sh', ['-c', command], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let run: ReturnType<typeof shellCommand>;
+    try {
+      run = shellCommand(command, cwd);
+    } catch (err) {
+      // 126 is the shell's "cannot execute"; an undefined code would read as a timeout.
+      return resolve({ ok: false, code: 126, tail: (err as Error).message });
+    }
+    const child = spawn('sh', ['-c', run.command], { cwd, detached: true, env: run.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const keep = (chunk: Buffer) => {
       output = (output + chunk.toString()).slice(-50_000);

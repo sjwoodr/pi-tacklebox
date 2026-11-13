@@ -45,6 +45,8 @@ export interface Config {
   jobs: { enabled: boolean; blockLong: boolean; waitSeconds: number };
   bang: { enabled: boolean };
   sessionSearch: { enabled: boolean; allowNonLocal: boolean };
+  /** srt is a command or path; settings is srt's settings file, relative to pi's agent dir unless absolute or ~. */
+  sandbox: { enabled: boolean; srt: string; settings: string };
   loop: LoopSettings;
   /** think-budget's rules (see src/think-budget/cap.ts); absent means think-budget.json is read instead. */
   thinkBudget?: { rules: unknown[] };
@@ -68,6 +70,8 @@ export const DEFAULTS: Config = {
   bang: { enabled: true },
   // On: reads past sessions from disk, and refuses a model that isn't local since results can hold private work.
   sessionSearch: { enabled: true, allowNonLocal: false },
+  // Off: it needs srt installed and a settings file saying what commands may reach (docs/sandbox.md).
+  sandbox: { enabled: false, srt: 'srt', settings: 'srt-settings.json' },
   // Off: it runs other models for many minutes and needs them named (implementer.model, reviewer.model).
   loop: {
     enabled: true,
