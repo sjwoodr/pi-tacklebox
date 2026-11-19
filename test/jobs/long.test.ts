@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { blockedReason } from '../../src/jobs/index.ts';
 import { longRunning } from '../../src/jobs/long.ts';
 
 test('commands that wait on something for minutes are caught', () => {
@@ -17,10 +18,12 @@ test('commands that wait on something for minutes are caught', () => {
     'watch kubectl get pods',
     'until curl -s localhost:8080; do sleep 5; done',
     'while ! gh run view 1 | grep -q completed; do sleep 30; done',
+    'while true\ndo\n  curl -s localhost:8080 && break\n  sleep 5\ndone',
+    'until kubectl get pod x; do sleep $DELAY; done',
     'sleep 300',
     'sleep 2m && gh run view 1',
     // A heredoc that runs keeps its text, and a loop after a written one is still seen.
-    "python3 <<'EOF'\nimport time\nwhile True:\n    time.sleep(5)\nEOF",
+    "bash <<'EOF'\nwhile true; do sleep 5; done\nEOF",
     "cat <<'EOF' | bash\nwhile true; do sleep 5; done\nEOF",
     "cat > a.txt <<'EOF'\nx\nEOF\nwhile true; do sleep 5; done",
     "cat > a.txt <<'EOF'\nwhile true; do sleep 5; done",
@@ -36,6 +39,10 @@ test('ordinary and one-shot commands pass', () => {
     "cat >> /tmp/aip/ai-proxy <<'PYEOF'\n    while True:\n        await asyncio.sleep(5)\nPYEOF",
     'tee notes.md <<EOF\nwhile we wait, sleep\nEOF',
     'cat > loop.sh <<-EOF\n\twhile true; do sleep 9; done\n\tEOF',
+    // Program text with a loop and a sleep call is not a shell polling loop (2026-11-19: an echo test).
+    'python3 -c "import asyncio; async def h(r, w):\n    while True: await r.read(1)\nasyncio.run(asyncio.sleep(1))"',
+    // The trade-off: a Python polling loop is not caught either.
+    "python3 <<'EOF'\nimport time\nwhile True:\n    time.sleep(5)\nEOF",
     'gh pr checks 42',
     'kubectl get pods',
     'kubectl logs deploy/api --tail=100',
@@ -46,4 +53,10 @@ test('ordinary and one-shot commands pass', () => {
     'grep -r watch src/',
     'cat watchlist.txt',
   ]) assert.equal(longRunning(command), undefined, command);
+});
+
+test('the refusal suggests a one-shot check that fits what was refused', () => {
+  assert.match(blockedReason(longRunning('gh run watch 1')!), /run `gh run view <id>` instead of `gh run watch`\.$/);
+  assert.match(blockedReason(longRunning('until curl -s x; do sleep 5; done')!), /^Not run: this waits on a polling loop[\s\S]*run the loop's check once, without the loop\.$/);
+  assert.match(blockedReason(longRunning('sleep 120 && make')!), /waits on a 120 s sleep[\s\S]*run the command without the sleep\.$/);
 });

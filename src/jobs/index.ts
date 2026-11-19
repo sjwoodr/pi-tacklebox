@@ -25,7 +25,7 @@ import { Type } from '@earendil-works/pi-ai';
 import { defineTool, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { loadConfig } from '../config.ts';
 import { duration, type Job, Jobs, tail } from './jobs.ts';
-import { longRunning } from './long.ts';
+import { type LongCommand, longRunning } from './long.ts';
 
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }], details: undefined });
 
@@ -47,10 +47,9 @@ export const endedMessage = (job: Job) =>
   (tail(job) || '(no output)') +
   `\n\`\`\`\nFull output: ${job.log}`;
 
-export const blockedReason = (what: string) =>
+export const blockedReason = ({ what, instead }: LongCommand) =>
   `Not run: this waits on ${what} and would block you for minutes. Start the same command with job_start ` +
-  "instead; you'll get a message when it ends. To check once without waiting, use a one-shot command " +
-  '(for example `gh run view <id>` instead of `gh run watch`).';
+  `instead; you'll get a message when it ends. To check once without waiting, run ${instead}.`;
 
 export default function (pi: ExtensionAPI) {
   const { enabled, blockLong, waitSeconds } = loadConfig().jobs;
@@ -140,8 +139,8 @@ export default function (pi: ExtensionAPI) {
   if (blockLong) {
     pi.on('tool_call', async (event) => {
       if (event.toolName !== 'bash') return;
-      const what = longRunning((event.input as { command?: string }).command ?? '');
-      if (what) return { block: true, reason: blockedReason(what) };
+      const long = longRunning((event.input as { command?: string }).command ?? '');
+      if (long) return { block: true, reason: blockedReason(long) };
     });
   }
 
