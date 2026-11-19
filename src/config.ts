@@ -41,6 +41,8 @@ export interface Config {
   outlineReads: { enabled: boolean; maxChars: number };
   search: { backend: SearchBackend; searxngUrl: string; ollamaUrl: string };
   nudge: { enabled: boolean; maxPerPrompt: number };
+  /** writeGuardMinKept: a write keeping less than this share (0-1) of an existing file's lines is refused once. */
+  editAssist: { enabled: boolean; closestMatch: boolean; argumentHints: boolean; writeGuard: boolean; writeGuardMinKept: number };
   verifyDone: { enabled: boolean; command: string; maxRounds: number; timeoutSeconds: number };
   jobs: { enabled: boolean; blockLong: boolean; waitSeconds: number };
   bang: { enabled: boolean };
@@ -56,12 +58,14 @@ export interface Config {
 // off until the config turns it on. nudge and verify-done are on: they only add a message when a run
 // would otherwise end broken, and verify-done runs the project's own tests (turn it off, or set a
 // safe command, in a repo whose tests are slow or touch real services). jobs is on: it adds tools and
-// refuses only bash calls that would block for minutes.
+// refuses only bash calls that would block for minutes. edit-assist is on: it only adds to failed edit
+// and write results, and refuses once a write that would drop most of an existing file.
 export const DEFAULTS: Config = {
   turnTimer: { enabled: true },
   outlineReads: { enabled: false, maxChars: 20_000 },
   search: { backend: 'off', searxngUrl: 'http://127.0.0.1:8888', ollamaUrl: 'http://127.0.0.1:11434' },
   nudge: { enabled: true, maxPerPrompt: 2 },
+  editAssist: { enabled: true, closestMatch: true, argumentHints: true, writeGuard: true, writeGuardMinKept: 0.5 },
   // An empty command means detect it from the project (package.json, go.mod, Cargo.toml, pytest, Makefile).
   verifyDone: { enabled: true, command: '', maxRounds: 2, timeoutSeconds: 120 },
   // Long commands run in the background; bash calls that would block for minutes are refused (jobs/long.ts).
@@ -110,6 +114,8 @@ export function parseConfig(raw: unknown): Config {
   if (!BACKENDS.includes(out.search.backend)) {
     throw new Error(`"search.backend" should be one of ${BACKENDS.map((b) => `"${b}"`).join(', ')}`);
   }
+  const minKept = out.editAssist.writeGuardMinKept;
+  if (!(minKept > 0 && minKept <= 1)) throw new Error('"editAssist.writeGuardMinKept" should be a share above 0 and at most 1');
   return out;
 }
 

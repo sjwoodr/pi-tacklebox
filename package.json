@@ -28,7 +28,8 @@
       "./src/bang/index.ts",
       "./src/session-search/index.ts",
       "./src/loop/index.ts",
-      "./src/sandbox/index.ts"
+      "./src/sandbox/index.ts",
+      "./src/edit-assist/index.ts"
     ],
     "skills": [
       "./skills"

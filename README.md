@@ -10,6 +10,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | outline-reads | A whole-file read of a large file returns its first 80 lines and an outline of definitions with line numbers, so a slow machine doesn't spend a minute reading 100 KB; reads with `offset`/`limit` are untouched | off |
 | search | `web_search` and `web_fetch` tools, through a SearXNG instance or Ollama's web search, with prompt guidance that includes today's date | off |
 | nudge | When a run is about to end on a reply that can't be what the model meant (a tool call written out as text, an empty reply, or "let me update `x.ts`:" with no call), sends one short message saying what went wrong and asks for one more request; at most `maxPerPrompt` per prompt | on |
+| edit-assist | Keeps a small model using `edit` instead of rewriting whole files. A failed edit whose `oldText` isn't in the file gets the closest stretch of the file as it is now and the lines that differ (usually text copied from an earlier version), and a note when its `newText` is already there. An `edit` or `write` rejected for missing arguments gets the exact call shape. A `write` that would keep under half of an existing file is refused once, saying what it would lose; the same write sent again goes through | on |
 | verify-done | When a run that edited files is about to end, runs the project's tests; if they fail, sends the model the end of the output and one more request, up to `maxRounds`. Tests are also run before the first edit, and a suite that already failed isn't blamed on the change | on |
 | jobs | `job_start`, `job_status` and `job_kill` tools: a long command (watching a deploy or CI run, a build, a dev server) runs in the background, and its exit code and last lines reach the model as a message when it ends, starting a turn if pi is idle. A bash call that would block for minutes (`gh run watch`, `kubectl rollout status`, `tail -f`, a polling loop, a long `sleep`) is refused with a pointer to `job_start` | on |
 | bang | `!command` gets an answer straight away: the model reads the output and responds, with no need to send another message. `!!command` stays private | on |
@@ -44,6 +45,13 @@ and no file means the defaults below. A misspelt setting is an error at startup,
     "ollamaUrl": "http://127.0.0.1:11434"
   },
   "nudge": { "enabled": true, "maxPerPrompt": 2 },
+  "editAssist": {
+    "enabled": true,
+    "closestMatch": true,
+    "argumentHints": true,
+    "writeGuard": true,
+    "writeGuardMinKept": 0.5
+  },
   "verifyDone": { "enabled": true, "command": "", "maxRounds": 2, "timeoutSeconds": 120 },
   "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 },
   "bang": { "enabled": true },
@@ -58,6 +66,11 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   search through your local Ollama; needs `ollama signin`, and queries and fetched URLs go to
   ollama.com).
 - `outlineReads.maxChars`: a whole-file read returning more text than this gets the outline.
+- `editAssist`: `closestMatch`, `argumentHints` and `writeGuard` switch its three parts. The guard
+  refuses a `write` over an existing file of 20 or more non-blank lines when the new content keeps
+  less than `writeGuardMinKept` (a share, default `0.5`) of them, then lets the identical write
+  through if it is sent again, so a deliberate rewrite costs one extra call. A `write` it lets through
+  that changed only a few lines of a whole file gets a note that `edit` sends less.
 - `verifyDone`: on by default, so it **runs the project's tests on its own** after any edit. In a repo
   whose tests are slow or touch real services (a database, an API, a deploy), turn it off or set a
   safe `command`.

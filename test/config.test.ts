@@ -5,13 +5,15 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { CONFIG, DEFAULTS, loadConfig, parseConfig } from '../src/config.ts';
 
-test('no file, or an empty one, gives the defaults: timer, nudge and verify-done on; outlines and search off', () => {
+test('no file, or an empty one, gives the defaults: timer, nudge, edit-assist and verify-done on; outlines and search off', () => {
   assert.deepEqual(parseConfig(undefined), DEFAULTS);
   assert.deepEqual(parseConfig({}), DEFAULTS);
   assert.equal(DEFAULTS.turnTimer.enabled, true);
   assert.equal(DEFAULTS.outlineReads.enabled, false);
   assert.equal(DEFAULTS.search.backend, 'off');
   assert.equal(DEFAULTS.nudge.enabled, true);
+  assert.equal(DEFAULTS.editAssist.enabled, true);
+  assert.equal(DEFAULTS.editAssist.writeGuardMinKept, 0.5);
   assert.equal(DEFAULTS.verifyDone.enabled, true);
 });
 
@@ -29,6 +31,8 @@ test('mistakes are errors, not silently ignored', () => {
   assert.throws(() => parseConfig({ search: { engine: 'x' } }), /unknown setting "search.engine"/);
   assert.throws(() => parseConfig({ turnTimer: { enabled: 'yes' } }), /"turnTimer.enabled" should be a boolean/);
   assert.throws(() => parseConfig({ search: { backend: 'google' } }), /"search.backend" should be one of "off", "searxng", "ollama"/);
+  assert.throws(() => parseConfig({ editAssist: { writeGuardMinKept: 0 } }), /"editAssist.writeGuardMinKept" should be a share above 0 and at most 1/);
+  assert.throws(() => parseConfig({ editAssist: { writeGuardMinKept: 50 } }), /"editAssist.writeGuardMinKept" should be a share/);
   assert.throws(() => parseConfig([]), /expected a JSON object/);
 });
 
