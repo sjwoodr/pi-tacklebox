@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai';
-import { type Attempt, budgetFor, MAX_ASKS, modelMatches, type Rule, streamWithBudget, unmatchedRules } from '../../src/think-budget/cap.ts';
+import type { AssistantMessage, AssistantMessageEvent, Message, Tool } from '@earendil-works/pi-ai';
+import {
+  answerNow,
+  type Attempt,
+  budgetFor,
+  MAX_ASKS,
+  modelMatches,
+  offersTools,
+  type Rule,
+  streamWithBudget,
+  unmatchedRules,
+} from '../../src/think-budget/cap.ts';
 
 const usage = () => ({
   input: 10,
@@ -193,4 +203,25 @@ test('a model pattern with * covers a family, and the first matching rule still 
   assert.deepEqual(unmatchedRules([{ provider: 'ollama', model: 'gemma5*', budget: 1 }], [{ provider: 'ollama', id: 'gemma4-e4b' }]), [
     'no model matches "ollama/gemma5*"',
   ]);
+});
+
+const tool = (name: string) => ({ name, description: name, parameters: { type: 'object', properties: {} } }) as unknown as Tool;
+const system = (extra: Partial<Extract<Message, { role: 'system' }>> = {}): Message => ({ role: 'system', content: 'prompt', timestamp: 0, ...extra });
+const user: Message = { role: 'user', content: 'hi', timestamp: 0 };
+
+test('offersTools replays the tools the system messages add and remove', () => {
+  assert.equal(offersTools([system({ toolsAdded: [tool('read'), tool('bash')] }), user]), true, 'an agent turn');
+  assert.equal(offersTools([system(), user]), false, "pi's compaction summary: a system prompt and no tools");
+  assert.equal(offersTools([system({ toolsAdded: [tool('read')] }), user, system({ toolsRemoved: [{ name: 'read' }] })]), false);
+  assert.equal(offersTools([system({ toolsAdded: [tool('read')] }), system({ toolsRemoved: [{ name: 'read' }], toolsAdded: [tool('edit')] })]), true);
+  assert.equal(offersTools([user]), true, 'no system message: shape unknown, so the old follow-up');
+});
+
+test('the follow-up invites a tool call only when the request has tools', () => {
+  assert.match(answerNow('n'), /or make the tool call you need/);
+  const plain = answerNow('n', false, false);
+  assert.doesNotMatch(plain, /make the tool call/);
+  assert.match(plain, /^\(Your private reasoning so far, not shown to me:\)\nn\n\nThinking time is up\. Write your answer/);
+  assert.match(plain, /do not write a tool call/);
+  assert.match(answerNow('n', true, false), /Your last reply was empty\. Thinking time is up\. Write your answer/);
 });

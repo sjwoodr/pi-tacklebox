@@ -12,6 +12,9 @@ This extension enforces the cap on pi's side, the way budget forcing works:
 1. It streams the reply and counts thinking tokens.
 2. At the cap it aborts the request and sends one more, with thinking off. That request
    carries the reasoning so far as notes and asks the model to answer or make its tool call now.
+   A request that offers no tools, such as pi's compaction summary, is asked only for its answer:
+   invited to make a call, a model summarizing an agent's session can carry on the agent's work
+   instead, and pi keeps that as the summary.
 3. When the reasoning ends with nothing said, it sends the same follow-up.
 4. When a follow-up comes back with nothing either (no text, no tool call), it asks again, up to
    four follow-ups in all, so the agent does not stop with an empty reply. An empty follow-up is

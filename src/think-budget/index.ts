@@ -10,7 +10,7 @@ import {
 } from '@earendil-works/pi-ai/compat';
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from '@earendil-works/pi-coding-agent';
 import { CONFIG, loadConfig } from '../config.ts';
-import { answerNow, budgetFor, type Cut, type Rule, streamWithBudget, unmatchedRules } from './cap.ts';
+import { answerNow, budgetFor, type Cut, offersTools, type Rule, streamWithBudget, unmatchedRules } from './cap.ts';
 
 /** The old standalone file, still read when tacklebox.json has no thinkBudget section. */
 const FALLBACK = 'think-budget.json';
@@ -76,12 +76,14 @@ export default function (pi: ExtensionAPI) {
     if (!budget) return api.streamSimple(model, context, options);
 
     const out = createAssistantMessageEventStream();
+    // pi's compaction and branch summaries come through here too, with no tools.
+    const tools = offersTools(context.messages);
     const attempt = (notes: string | undefined, signal: AbortSignal, again?: boolean) =>
       notes === undefined
         ? api.streamSimple(model, context, { ...options, signal })
         : api.streamSimple(
             model,
-            { ...context, messages: [...context.messages, { role: 'user', content: answerNow(notes, again), timestamp: Date.now() }] },
+            { ...context, messages: [...context.messages, { role: 'user', content: answerNow(notes, again, tools), timestamp: Date.now() }] },
             // No level is how pi asks for thinking off (the model's thinkingLevelMap.off is sent).
             { ...options, reasoning: undefined, signal },
           );

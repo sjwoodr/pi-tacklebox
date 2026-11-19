@@ -1,4 +1,4 @@
-import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai';
+import type { AssistantMessage, AssistantMessageEvent, Message, Usage } from '@earendil-works/pi-ai';
 
 /** Where the capped reply goes: pi's assistant event stream, or a test collector. */
 export interface Sink {
@@ -16,10 +16,36 @@ export type Attempt = (
   again?: boolean,
 ) => AsyncIterable<AssistantMessageEvent>;
 
-export const answerNow = (notes: string, again = false) =>
+/**
+ * The follow-up after a cut. `tools` is whether the request offers any: one that offers none (pi's
+ * compaction summary) must not be invited to make a call. From a Qwen3.8 27B run in LM Studio
+ * (2026-11-19): a compaction summary cut at the cap was asked to "answer, or make the tool call you
+ * need", and the model carried on the agent's work instead, writing a call as text. pi kept that
+ * as the summary, and the session lost its notes on the task.
+ */
+export const answerNow = (notes: string, again = false, tools = true) =>
   `(Your private reasoning so far, not shown to me:)\n${notes}\n\n` +
   (again ? 'Your last reply was empty. ' : '') +
-  'Thinking time is up. Continue now: answer, or make the tool call you need.';
+  (tools
+    ? 'Thinking time is up. Continue now: answer, or make the tool call you need.'
+    : 'Thinking time is up. Write your answer to my request now, as plain text: this request has no tools, so do not write a tool call.');
+
+/**
+ * Whether a request offers the model any tools: what is left after replaying its system messages'
+ * toolsAdded and toolsRemoved. A request with no system message is taken to offer them, which keeps
+ * the old follow-up where the shape is unknown.
+ */
+export function offersTools(messages: readonly Message[]): boolean {
+  const tools = new Set<string>();
+  let system = false;
+  for (const m of messages) {
+    if (m.role !== 'system') continue;
+    system = true;
+    for (const t of m.toolsAdded ?? []) tools.add(t.name);
+    for (const t of m.toolsRemoved ?? []) tools.delete(t.name);
+  }
+  return !system || tools.size > 0;
+}
 
 /**
  * How many follow-ups a reply gets before it ends empty. An empty follow-up is usually a tool call
