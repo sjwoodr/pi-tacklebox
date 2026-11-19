@@ -43,6 +43,8 @@ export interface Config {
   nudge: { enabled: boolean; maxPerPrompt: number };
   /** writeGuardMinKept: a write keeping less than this share (0-1) of an existing file's lines is refused once. */
   editAssist: { enabled: boolean; closestMatch: boolean; argumentHints: boolean; writeGuard: boolean; writeGuardMinKept: number };
+  /** noteAt: the identical call (same arguments, same output) in a row that gets a note; blockAt: identical results after which the call is refused, 0 for never. */
+  repeatGuard: { enabled: boolean; noteAt: number; blockAt: number };
   verifyDone: { enabled: boolean; command: string; maxRounds: number; timeoutSeconds: number };
   jobs: { enabled: boolean; blockLong: boolean; waitSeconds: number };
   bang: { enabled: boolean };
@@ -59,13 +61,16 @@ export interface Config {
 // would otherwise end broken, and verify-done runs the project's own tests (turn it off, or set a
 // safe command, in a repo whose tests are slow or touch real services). jobs is on: it adds tools and
 // refuses only bash calls that would block for minutes. edit-assist is on: it only adds to failed edit
-// and write results, and refuses once a write that would drop most of an existing file.
+// and write results, and refuses once a write that would drop most of an existing file. repeat-guard
+// is on: it only adds to a result that repeats the last ones, and refuses a call already repeated
+// blockAt times with the same output.
 export const DEFAULTS: Config = {
   turnTimer: { enabled: true },
   outlineReads: { enabled: false, maxChars: 20_000 },
   search: { backend: 'off', searxngUrl: 'http://127.0.0.1:8888', ollamaUrl: 'http://127.0.0.1:11434' },
   nudge: { enabled: true, maxPerPrompt: 2 },
   editAssist: { enabled: true, closestMatch: true, argumentHints: true, writeGuard: true, writeGuardMinKept: 0.5 },
+  repeatGuard: { enabled: true, noteAt: 3, blockAt: 5 },
   // An empty command means detect it from the project (package.json, go.mod, Cargo.toml, pytest, Makefile).
   verifyDone: { enabled: true, command: '', maxRounds: 2, timeoutSeconds: 120 },
   // Long commands run in the background; bash calls that would block for minutes are refused (jobs/long.ts).
@@ -116,6 +121,10 @@ export function parseConfig(raw: unknown): Config {
   }
   const minKept = out.editAssist.writeGuardMinKept;
   if (!(minKept > 0 && minKept <= 1)) throw new Error('"editAssist.writeGuardMinKept" should be a share above 0 and at most 1');
+  const { noteAt, blockAt } = out.repeatGuard;
+  if (!(Number.isInteger(noteAt) && noteAt >= 2)) throw new Error('"repeatGuard.noteAt" should be a whole number, 2 or more');
+  if (!(Number.isInteger(blockAt) && (blockAt === 0 || blockAt >= noteAt)))
+    throw new Error('"repeatGuard.blockAt" should be 0 (never refuse) or a whole number no smaller than noteAt');
   return out;
 }
 

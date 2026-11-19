@@ -11,6 +11,7 @@ parts aren't related; each one fixes one thing and can be switched off on its ow
 | search | `web_search` and `web_fetch` tools, through a SearXNG instance or Ollama's web search, with prompt guidance that includes today's date | off |
 | nudge | When a run is about to end on a reply that can't be what the model meant (a tool call written out as text, an empty reply, or "let me update `x.ts`:" with no call), sends one short message saying what went wrong and asks for one more request; at most `maxPerPrompt` per prompt | on |
 | edit-assist | Keeps a small model using `edit` instead of rewriting whole files. A failed edit whose `oldText` isn't in the file gets the closest stretch of the file as it is now and the lines that differ (usually text copied from an earlier version), and a note when its `newText` is already there; an edit that changed nothing is told why (the same text in `oldText` and `newText`, or the change already made). An `edit` or `write` rejected for missing arguments gets the exact call shape. A `write` that would keep under half of an existing file is refused once, saying what it would lose; the same write sent again goes through | on |
+| repeat-guard | Breaks a loop of the same tool call. The 3rd identical call in a row (same arguments, same output as the last ones) gets a note that running it again will only show the same thing and asks for a different next step; after 5, the same call is refused without running until the model makes a different one. A call whose output changes (a log that grows, tests after an edit) never counts | on |
 | verify-done | When a run that edited files is about to end, runs the project's tests; if they fail, sends the model the end of the output and one more request, up to `maxRounds`. Tests are also run before the first edit, and a suite that already failed isn't blamed on the change | on |
 | jobs | `job_start`, `job_status` and `job_kill` tools: a long command (watching a deploy or CI run, a build, a dev server) runs in the background, and its exit code and last lines reach the model as a message when it ends, starting a turn if pi is idle. A bash call that would block for minutes (`gh run watch`, `kubectl rollout status`, `tail -f`, a shell polling loop, a long `sleep`) is refused with a pointer to `job_start` and a one-shot way to check the same thing | on |
 | bang | `!command` gets an answer straight away: the model reads the output and responds, with no need to send another message. `!!command` stays private | on |
@@ -52,6 +53,7 @@ and no file means the defaults below. A misspelt setting is an error at startup,
     "writeGuard": true,
     "writeGuardMinKept": 0.5
   },
+  "repeatGuard": { "enabled": true, "noteAt": 3, "blockAt": 5 },
   "verifyDone": { "enabled": true, "command": "", "maxRounds": 2, "timeoutSeconds": 120 },
   "jobs": { "enabled": true, "blockLong": true, "waitSeconds": 900 },
   "bang": { "enabled": true },
@@ -71,6 +73,10 @@ and no file means the defaults below. A misspelt setting is an error at startup,
   less than `writeGuardMinKept` (a share, default `0.5`) of them, then lets the identical write
   through if it is sent again, so a deliberate rewrite costs one extra call. A `write` it lets through
   that changed only a few lines of a whole file gets a note that `edit` sends less.
+- `repeatGuard`: `noteAt` is the identical call in a row whose result gets the note (2 or more), and
+  every identical result after it gets it too; once `blockAt` identical results have come back, the
+  same call is refused until a different one is made (`0` never refuses). Identical means the same
+  tool, the same arguments and the same output, so polling something that changes is never caught.
 - `verifyDone`: on by default, so it **runs the project's tests on its own** after any edit. In a repo
   whose tests are slow or touch real services (a database, an API, a deploy), turn it off or set a
   safe `command`.

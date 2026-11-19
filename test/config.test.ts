@@ -14,6 +14,7 @@ test('no file, or an empty one, gives the defaults: timer, nudge, edit-assist an
   assert.equal(DEFAULTS.nudge.enabled, true);
   assert.equal(DEFAULTS.editAssist.enabled, true);
   assert.equal(DEFAULTS.editAssist.writeGuardMinKept, 0.5);
+  assert.deepEqual(DEFAULTS.repeatGuard, { enabled: true, noteAt: 3, blockAt: 5 });
   assert.equal(DEFAULTS.verifyDone.enabled, true);
 });
 
@@ -33,6 +34,10 @@ test('mistakes are errors, not silently ignored', () => {
   assert.throws(() => parseConfig({ search: { backend: 'google' } }), /"search.backend" should be one of "off", "searxng", "ollama"/);
   assert.throws(() => parseConfig({ editAssist: { writeGuardMinKept: 0 } }), /"editAssist.writeGuardMinKept" should be a share above 0 and at most 1/);
   assert.throws(() => parseConfig({ editAssist: { writeGuardMinKept: 50 } }), /"editAssist.writeGuardMinKept" should be a share/);
+  assert.throws(() => parseConfig({ repeatGuard: { noteAt: 1 } }), /"repeatGuard.noteAt" should be a whole number, 2 or more/);
+  assert.throws(() => parseConfig({ repeatGuard: { noteAt: 2.5 } }), /"repeatGuard.noteAt" should be a whole number/);
+  assert.throws(() => parseConfig({ repeatGuard: { noteAt: 4, blockAt: 3 } }), /"repeatGuard.blockAt" should be 0 \(never refuse\) or a whole number no smaller than noteAt/);
+  assert.equal(parseConfig({ repeatGuard: { blockAt: 0 } }).repeatGuard.blockAt, 0);
   assert.throws(() => parseConfig([]), /expected a JSON object/);
 });
 
