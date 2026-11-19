@@ -19,6 +19,11 @@ test('commands that wait on something for minutes are caught', () => {
     'while ! gh run view 1 | grep -q completed; do sleep 30; done',
     'sleep 300',
     'sleep 2m && gh run view 1',
+    // A heredoc that runs keeps its text, and a loop after a written one is still seen.
+    "python3 <<'EOF'\nimport time\nwhile True:\n    time.sleep(5)\nEOF",
+    "cat <<'EOF' | bash\nwhile true; do sleep 5; done\nEOF",
+    "cat > a.txt <<'EOF'\nx\nEOF\nwhile true; do sleep 5; done",
+    "cat > a.txt <<'EOF'\nwhile true; do sleep 5; done",
   ]) assert.ok(longRunning(command), command);
 });
 
@@ -26,6 +31,11 @@ test('ordinary and one-shot commands pass', () => {
   for (const command of [
     'gh run view 123456',
     'gh run list --limit 5',
+    // 2026-11-19: Python written to a file, with a while loop and asyncio.sleep in it, is not a polling loop.
+    "cat << 'PYEOF' > /tmp/repro.py\nasync def handle(r, w):\n    while True:\n        await r.read(1)\n\nasyncio.run(asyncio.sleep(1))\nPYEOF\npython3 /tmp/repro.py",
+    "cat >> /tmp/aip/ai-proxy <<'PYEOF'\n    while True:\n        await asyncio.sleep(5)\nPYEOF",
+    'tee notes.md <<EOF\nwhile we wait, sleep\nEOF',
+    'cat > loop.sh <<-EOF\n\twhile true; do sleep 9; done\n\tEOF',
     'gh pr checks 42',
     'kubectl get pods',
     'kubectl logs deploy/api --tail=100',
