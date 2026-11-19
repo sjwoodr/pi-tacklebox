@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { closestMatch, lineOf, mismatchHint } from '../../src/edit-assist/closest.ts';
+import { closestMatch, lineOf, mismatchHint, noChangeHint } from '../../src/edit-assist/closest.ts';
 
 // The shape of the 2026-11-19 misses: oldText from before the model's own edit (return -> sys.exit(0)).
 const file = [
@@ -75,6 +75,18 @@ test('a long stretch is shown from just before its first difference, at most 60 
   const hint = mismatchHint(long.join('\n'), 'oldText', wanted);
   assert.match(hint, /closest stretch is lines 20-119/);
   assert.match(hint, /Lines 90-119 as they are now/);
+});
+
+test('an edit that changed nothing is told whether oldText and newText were the same', () => {
+  assert.match(noChangeHint([{ oldText: 'a = 1', newText: 'a = 1' }]), /^edit-assist: This edit has the same text in oldText and newText, so it changes nothing\./);
+  assert.match(
+    noChangeHint([
+      { oldText: 'a = 1', newText: 'a = 2' },
+      { oldText: 'b = 1', newText: 'b = 1' },
+    ]),
+    /^edit-assist: edits\[1\] has the same text/,
+  );
+  assert.match(noChangeHint([{ oldText: 'a = 1', newText: 'a  =  1' }]), /already reads the way this edit would leave it/);
 });
 
 test('lineOf finds where text starts', () => {

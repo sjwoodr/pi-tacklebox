@@ -3,7 +3,8 @@
  * from silently throwing most of a file away. Three parts, each with its own switch:
  *
  *   closestMatch   an edit whose oldText isn't in the file gets, added to its error, the closest
- *                  stretch of the file as it is now and the lines that differ
+ *                  stretch of the file as it is now and the lines that differ; one that changed
+ *                  nothing is told why (oldText and newText the same, or the change already made)
  *   argumentHints  an edit or write rejected for missing arguments gets the exact call shape, and the
  *                  file last worked on when path was the key missing
  *   writeGuard     a write that would keep under writeGuardMinKept (default half) of an existing file's
@@ -28,11 +29,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { loadConfig } from '../config.ts';
-import { mismatchHint } from './closest.ts';
+import { mismatchHint, noChangeHint } from './closest.ts';
 import { argumentHint, isSmallChange, refusal, smallChangeNote, writeChange } from './write.ts';
 
 /** pi's edit errors for an oldText it can't find: one edit, or edits[N] of several. */
 const NOT_FOUND = /Could not find (?:the exact text|edits\[(\d+)\]) in /;
+/** pi's edit error when every oldText was found but the file came out the same. */
+const NO_CHANGE = /No changes made to [\s\S]*? produced identical content/;
 
 type Block = { type: string; text?: string };
 const textOf = (content: readonly Block[]) =>
@@ -74,7 +77,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (event.toolName !== 'edit' || !event.isError || !closestMatch || !given || !Array.isArray(input.edits)) return;
-    const miss = NOT_FOUND.exec(textOf(event.content));
+    const error = textOf(event.content);
+    if (NO_CHANGE.test(error)) {
+      const edits = (input.edits as { oldText?: unknown; newText?: unknown }[]).flatMap((e) =>
+        typeof e?.oldText === 'string' && typeof e.newText === 'string' ? [{ oldText: lf(e.oldText), newText: lf(e.newText) }] : [],
+      );
+      return { content: withNote(event.content, noChangeHint(edits)) };
+    }
+    const miss = NOT_FOUND.exec(error);
     if (!miss) return;
     const index = miss[1] === undefined ? 0 : Number(miss[1]);
     const edit = input.edits[index] as { oldText?: unknown; newText?: unknown } | undefined;

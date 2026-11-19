@@ -207,6 +207,19 @@ function pairUp(window: string[], want: string[], firstLine: number, fileRun: nu
   return out;
 }
 
+/**
+ * What to tell the model when pi's edit found every oldText but the result is the file unchanged. In
+ * the 2026-11-19 run the model, shown the current lines, pasted them as both oldText and newText.
+ */
+export function noChangeHint(edits: { oldText: string; newText: string }[]): string {
+  const same = edits.findIndex((e) => e.oldText === e.newText);
+  if (same < 0) {
+    return 'edit-assist: The file already reads the way this edit would leave it, so the change has probably been made already. read the file before editing it again.';
+  }
+  const which = edits.length === 1 ? 'This edit' : `edits[${same}]`;
+  return `edit-assist: ${which} has the same text in oldText and newText, so it changes nothing. Keep oldText as the lines now in the file, and put the changed version of them in newText.`;
+}
+
 /** 1-based line where needle starts in text, if it is there. */
 export function lineOf(text: string, needle: string): number | undefined {
   const at = text.indexOf(needle);

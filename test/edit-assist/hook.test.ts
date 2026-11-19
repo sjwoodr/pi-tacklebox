@@ -55,6 +55,19 @@ test('with several edits, the one pi names is the one matched', async () => {
   assert.match(out.content[0].text, /This edits\[1\]\.oldText is not in the file as it is now\. The closest stretch is lines 5-6/);
 });
 
+test('an edit that produced identical content gets the reason added', async () => {
+  const { call } = load();
+  const error = 'No changes made to app.py. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.';
+  const out = await call('tool_result', {
+    toolName: 'edit',
+    toolCallId: '1',
+    isError: true,
+    input: { path: 'app.py', edits: [{ oldText: 'step_1()\nstep_2()', newText: 'step_1()\nstep_2()' }] },
+    content: text(error),
+  });
+  assert.equal(out.content[0].text, `${error}\n\nedit-assist: This edit has the same text in oldText and newText, so it changes nothing. Keep oldText as the lines now in the file, and put the changed version of them in newText.`);
+});
+
 test('other edit errors, successful edits and unreadable files are left alone', async () => {
   const { dir, call } = load();
   writeFileSync(join(dir, 'app.py'), script);
